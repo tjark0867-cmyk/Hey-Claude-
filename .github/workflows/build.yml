@@ -1,0 +1,64 @@
+name: APK bauen
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Projekt finden (auch wenn als ZIP hochgeladen)
+        run: |
+          if [ -f app/build.gradle ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          else
+            ZIP=$(ls *.zip 2>/dev/null | head -n1 || true)
+            if [ -z "$ZIP" ]; then echo "Kein Projekt und keine ZIP gefunden"; exit 1; fi
+            unzip -q -o "$ZIP" -d _src
+            DIR=$(dirname "$(find _src -maxdepth 4 -name settings.gradle | head -n1)")
+            echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Wake-Word-Modell laden
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          curl -fL --retry 3 -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q model.zip
+          mkdir -p app/src/main/assets
+          rm -rf app/src/main/assets/model-en
+          mv vosk-model-small-en-us-0.15 app/src/main/assets/model-en
+          rm model.zip
+
+      - name: APK bauen
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/out/HeyClaude.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HeyClaude-APK
+          path: out/HeyClaude.apk
+
+      - name: Als Release veroeffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Hey Claude (Build ${{ github.run_number }})
+          files: out/HeyClaude.apk
+          body: Neueste APK - herunterladen und installieren.

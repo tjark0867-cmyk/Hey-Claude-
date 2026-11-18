@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Gestoppt"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:paddingBottom="12dp" />
+
+        <Button
+            android:id="@+id/toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Starten" />
+
+        <Button
+            android:id="@+id/ask"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Jetzt fragen (ohne „Hey Claude“)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="16dp"
+            android:text="Letzte Frage"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/lastQ"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textIsSelectable="true"
+            android:text="–" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="Antwort"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/lastA"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textIsSelectable="true"
+            android:text="–" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="28dp"
+            android:text="Einstellungen"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="Claude API-Schlüssel" />
+
+        <EditText
+            android:id="@+id/apiKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="sk-ant-…"
+            android:importantForAutofill="no"
+            android:inputType="textPassword"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/getKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="API-Schlüssel besorgen" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="Modell (Standard: claude-haiku-5-5, am schnellsten)" />
+
+        <EditText
+            android:id="@+id/model"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:singleLine="true" />
+
+        <CheckBox
+            android:id="@+id/webSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Websuche für aktuelle Infos (Wetter, News …)" />
+
+        <CheckBox
+            android:id="@+id/followUp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Nach Rückfragen von Claude automatisch weiter zuhören" />
+
+        <Button
+            android:id="@+id/save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Speichern" />
+
+        <Button
+            android:id="@+id/battery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Akku-Optimierung ausschalten (empfohlen)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="20dp"
+            android:textSize="13sp"
+            android:text="So geht es:API-Schlüssel eintragen → „Starten“ → App kann geschlossen werden. Sag „Hey Claude“, warte auf den Piep und stell deine Frage. Solange der Assistent läuft, siehst du eine Benachrichtigung und den grünen Mikrofon-Punkt. Nach einem Neustart des Handys die App einmal öffnen und auf „Starten“ tippen." />
+
+    </LinearLayout>
+</ScrollView>

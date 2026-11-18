@@ -1,0 +1,62 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'de.heyclaude.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'de.heyclaude.app'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+        ndk {
+            // gaengige Handy-Prozessoren (haelt die APK kleiner)
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+    }
+
+    // Fester Schluessel, damit spaetere Versionen sich einfach ueber die alte installieren lassen.
+    signingConfigs {
+        shared {
+            storeFile file('heyclaude.keystore')
+            storePassword 'heyclaude'
+            keyAlias 'heyclaude'
+            keyPassword 'heyclaude'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+}
+
+dependencies {
+    // Offline-Spracherkennung fuer das Wake-Word "Hey Claude"
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
+    implementation 'com.alphacephei:vosk-android:0.3.47'
+}
