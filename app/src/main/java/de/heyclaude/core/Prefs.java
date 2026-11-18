@@ -21,6 +21,7 @@ final class Prefs {
     static final String ENABLED = "enabled";
     static final String AUTO_UPDATE = "auto_update";
     static final String LAST_UPDATE_CHECK = "last_update_check";
+    static final String STREAMING = "streaming";
 
     private Prefs() {
     }
@@ -77,5 +78,10 @@ final class Prefs {
 
     static boolean autoUpdate(Context ctx) {
         return get(ctx).getBoolean(AUTO_UPDATE, true);
+    }
+
+    /** Schneller antworten: sprechen, waehrend Claude noch schreibt. */
+    static boolean streaming(Context ctx) {
+        return get(ctx).getBoolean(STREAMING, true);
     }
 }

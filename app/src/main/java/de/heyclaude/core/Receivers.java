@@ -23,7 +23,11 @@ public class Receivers implements Component {
                 installStatus(ctx, intent);
                 break;
             case "restart":
+                Timers.rescheduleAll(ctx); // Wecker ueberleben Neustart und Update
                 restart(ctx, intent);
+                break;
+            case "core":
+                Timers.handle(ctx, intent);
                 break;
             default:
                 break;

@@ -123,6 +123,11 @@ public class Engine extends ContextWrapper implements Component {
     private SpeechRecognizer recognizer;
     private int srSession;
     private Speaker speaker;
+    /** Laufende Engine (fuer Erinnerungen, die vorgelesen werden sollen). */
+    private static volatile Engine current;
+    private int questionId;
+    private boolean streamStarted;
+    private final StringBuilder sentenceBuf = new StringBuilder();
     private LocationHelper locationHelper;
     private DeviceControl device;
     private android.media.AudioFocusRequest sessionFocus;
@@ -134,6 +139,7 @@ public class Engine extends ContextWrapper implements Component {
 
     private void create() {
         running = true;
+        current = this;
         NotificationManager nm = getSystemService(NotificationManager.class);
         NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Hey Claude (zuhören)",
                 NotificationManager.IMPORTANCE_LOW);
@@ -215,6 +221,9 @@ public class Engine extends ContextWrapper implements Component {
     private void destroy() {
         destroyed = true;
         idle = true;
+        if (current == this) {
+            current = null;
+        }
         running = false;
         main.removeCallbacksAndMessages(null);
         stopWakeThread();
@@ -482,6 +491,12 @@ public class Engine extends ContextWrapper implements Component {
         }
         stopWakeThread();
         idle = false;
+        questionId++; // eine evtl. noch laufende Antwort verwerfen
+        streamStarted = false;
+        sentenceBuf.setLength(0);
+        if (Timers.isRinging(this)) {
+            Timers.stopRinging(this); // "Hey Claude" bringt einen klingelnden Wecker zum Schweigen
+        }
         requestSessionFocus();
         state = State.LISTENING;
         setStatus("Ich höre zu …");
@@ -638,7 +653,14 @@ public class Engine extends ContextWrapper implements Component {
     private void handleQuestion(String text) {
         lastQuestion = text;
         String normalized = text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N} ]", "").trim();
+        if (Timers.alarmRecentlyRang(this) && normalized.matches(".*(schlummer|snooze|noch (fünf|5|zehn|10) minuten).*")) {
+            Timers.snooze(this, Timers.lastAlarmLabel(this));
+            Prefs.get(this).edit().putLong("last_alarm_at", 0).apply();
+            speak("Okay, ich wecke dich in neun Minuten nochmal.", false);
+            return;
+        }
         if (STOP_PATTERN.matcher(normalized).matches() || normalized.equals("pause")) {
+            Timers.stopRinging(this);
             if (device.isMusicActive()) {
                 device.sendMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PAUSE); // "Stopp" haelt die Musik an
             }
@@ -658,8 +680,16 @@ public class Engine extends ContextWrapper implements Component {
         if (now - lastInteraction > HISTORY_TIMEOUT_MS) {
             history.clear();
         }
+        if (!history.isEmpty() && "user".equals(history.get(history.size() - 1)[0])) {
+            history.remove(history.size() - 1); // vorherige Frage blieb ohne Antwort (unterbrochen)
+        }
         history.add(new String[]{"user", text});
         final List<String[]> snapshot = new ArrayList<>(history);
+        final int q = ++questionId;
+        streamStarted = false;
+        sentenceBuf.setLength(0);
+        final ClaudeClient.TextListener listener = Prefs.streaming(this)
+                ? delta -> main.post(() -> onDelta(q, delta)) : null;
         final String model = Prefs.model(this);
         final boolean web = Prefs.webSearch(this);
         final boolean useLocation = Prefs.location(this);
@@ -670,7 +700,7 @@ public class Engine extends ContextWrapper implements Component {
             try {
                 LocationHelper.Place place = useLocation ? locationHelper.get(4000) : null;
                 String system = systemPrompt(web, place, device.statusLine());
-                answer = ClaudeClient.ask(apiKey, model, web, true, system, snapshot, place, device);
+                answer = ClaudeClient.ask(apiKey, model, web, true, system, snapshot, place, device, listener);
                 ok = true;
             } catch (ClaudeClient.ApiException e) {
                 Log.e(TAG, "API-Fehler " + e.status + ": " + e.getMessage());
@@ -684,12 +714,75 @@ public class Engine extends ContextWrapper implements Component {
             }
             final String a = answer;
             final boolean success = ok;
-            main.post(() -> onAnswer(a, success));
+            main.post(() -> onAnswer(q, a, success));
         });
     }
 
-    private void onAnswer(String answer, boolean ok) {
-        if (destroyed) {
+    // ------------------------------------------------------------------ Schnell antworten (satzweise)
+
+    private static final java.util.Set<String> ABBREV = new java.util.HashSet<>(java.util.Arrays.asList(
+            "z", "b", "ca", "bzw", "usw", "etc", "evtl", "inkl", "ggf", "d", "h", "u", "a", "dr", "nr", "st",
+            "str", "bspw", "vgl", "min", "max", "mio", "mrd", "jh", "o", "ä", "s", "zb"));
+
+    /** Neuer Textschnipsel von Claude: fertige Saetze sofort sprechen. */
+    private void onDelta(int q, String delta) {
+        if (destroyed || q != questionId || (state != State.THINKING && state != State.SPEAKING)) {
+            return;
+        }
+        sentenceBuf.append(delta);
+        String sentence;
+        while ((sentence = takeSentence(sentenceBuf, streamStarted)) != null) {
+            if (!streamStarted) {
+                streamStarted = true;
+                state = State.SPEAKING;
+                setStatus("Spreche …");
+                speaker.beginStream();
+            }
+            speaker.enqueue(sentence);
+        }
+    }
+
+    /** Schneidet einen fertigen Satz vorne ab (oder null, wenn noch keiner fertig ist). */
+    static String takeSentence(StringBuilder sb, boolean started) {
+        int min = started ? 2 : 12; // der erste Happen soll nicht nur "Okay." sein
+        for (int i = 0; i < sb.length(); i++) {
+            char c = sb.charAt(i);
+            if (c != '.' && c != '!' && c != '?' && c != '\n') {
+                continue;
+            }
+            if (c != '\n') {
+                if (i + 1 >= sb.length()) {
+                    return null; // noch nicht sicher, ob der Satz zu Ende ist
+                }
+                if (!Character.isWhitespace(sb.charAt(i + 1))) {
+                    continue;
+                }
+            }
+            if (c == '.' && i > 0 && Character.isDigit(sb.charAt(i - 1))) {
+                continue; // "3. November"
+            }
+            if (c == '.') {
+                int st = i - 1;
+                while (st >= 0 && Character.isLetter(sb.charAt(st))) {
+                    st--;
+                }
+                String word = sb.substring(st + 1, i).toLowerCase(Locale.ROOT);
+                if (ABBREV.contains(word)) {
+                    continue; // "z. B.", "ca."
+                }
+            }
+            String s = sb.substring(0, i + 1).trim();
+            if (s.length() < min) {
+                continue;
+            }
+            sb.delete(0, i + 1);
+            return s;
+        }
+        return null;
+    }
+
+    private void onAnswer(int q, String answer, boolean ok) {
+        if (destroyed || q != questionId) {
             return;
         }
         if (ok) {
@@ -704,7 +797,38 @@ public class Engine extends ContextWrapper implements Component {
         lastInteraction = System.currentTimeMillis();
         lastAnswer = answer;
         boolean followUp = ok && Prefs.followUp(this) && answer.trim().endsWith("?");
-        speak(answer, followUp);
+        if (streamStarted) {
+            String rest = sentenceBuf.toString().trim();
+            sentenceBuf.setLength(0);
+            if (!rest.isEmpty()) {
+                speaker.enqueue(rest);
+            }
+            if (!ok) {
+                speaker.enqueue(answer); // Fehler mitten in der Antwort
+            }
+            streamStarted = false;
+            followUpAfterSpeech = followUp;
+            speaker.endStream(this::onSpeechFinished);
+        } else {
+            sentenceBuf.setLength(0);
+            speak(answer, followUp);
+        }
+    }
+
+    /** Liest etwas vor (z.B. eine Erinnerung), wenn gerade kein Gespraech laeuft. */
+    static void announce(final String text) {
+        final Engine e = current;
+        if (e == null) {
+            return;
+        }
+        e.main.post(() -> {
+            if (e.destroyed || (e.state != State.WAKE && e.state != State.IDLE)) {
+                return;
+            }
+            e.stopWakeThread();
+            idle = false;
+            e.speak(text, false);
+        });
     }
 
     private String apiErrorText(ClaudeClient.ApiException e) {
@@ -744,10 +868,15 @@ public class Engine extends ContextWrapper implements Component {
         sb.append("Beispiel: „Öffne Instagram und schreib Emily hey“ → send_message mit app=instagram, to=Emily, text=hey. ");
         sb.append("„Schreib Mama, dass ich später komme“ → send_message mit app=whatsapp, to=Mama, text=Ich komme später. ");
         sb.append("Frag bei solchen Befehlen nicht nach, sondern mach es einfach. ");
+        sb.append("Du kannst Timer, Wecker und Erinnerungen stellen, auflisten und löschen (create_timer, list_timers, cancel_timer). ");
+        sb.append("„Timer 10 Minuten“ → create_timer type=timer in_seconds=600. „Weck mich um 7“ → type=alarm at=nächster 7-Uhr-Zeitpunkt. ");
+        sb.append("„Erinnere mich in einer Stunde an die Wäsche“ → type=reminder in_seconds=3600 label=Wäsche aufhängen. ");
+        sb.append("Schreibe vor Handy-Werkzeugen keinen Text. Vor einer Websuche darfst du kurz „Moment, ich schau nach.“ sagen. ");
         sb.append("WICHTIG: Nach dem Öffnen einer App, dem Starten von Musik, dem Senden einer Nachricht oder einer anderen Handy-Steuerung ");
         sb.append("antworte NUR mit „Okay.“ – keine Erklärungen, keine Hinweise auf Benachrichtigungen, Erlaubnisse oder Einstellungen. ");
+        sb.append("Bei Timern und Weckern bestätige ganz kurz mit der Zeit, z.B. „Timer läuft, zehn Minuten.“ oder „Wecker steht auf sieben Uhr.“ ");
         sb.append("Nur wenn ein Werkzeug mit „Fehler“ antwortet, sag in einem kurzen Satz, was nicht ging. ");
-        sb.append("Anrufe, WLAN, Bluetooth, Helligkeit, Timer oder Wecker kannst du noch nicht – sag das ehrlich. ");
+        sb.append("Anrufe, WLAN, Bluetooth oder Helligkeit kannst du noch nicht – sag das ehrlich. ");
         if (deviceStatus != null && !deviceStatus.isEmpty()) {
             sb.append("Aktueller Handy-Status: ").append(deviceStatus).append(". ");
         }

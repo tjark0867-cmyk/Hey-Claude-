@@ -135,6 +135,30 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                         .put("to", new JSONObject().put("type", "string"))
                         .put("text", new JSONObject().put("type", "string")),
                 new JSONArray().put("to").put("text")));
+        tools.put(tool("create_timer",
+                "Stellt einen Timer (Countdown, klingelt), einen Wecker (klingelt zu einer Uhrzeit) oder eine Erinnerung "
+                        + "(Benachrichtigung und vorlesen). type: timer, alarm oder reminder. Zeit entweder in_seconds "
+                        + "(ab jetzt) ODER at als lokale Zeit im Format YYYY-MM-DDTHH:MM (aktuelles Datum steht im Systemprompt). "
+                        + "label: kurzer Name bzw. bei Erinnerungen der Text, an den erinnert werden soll.",
+                new JSONObject()
+                        .put("type", new JSONObject().put("type", "string")
+                                .put("enum", new JSONArray().put("timer").put("alarm").put("reminder")))
+                        .put("in_seconds", new JSONObject().put("type", "integer").put("minimum", 1))
+                        .put("at", new JSONObject().put("type", "string"))
+                        .put("label", new JSONObject().put("type", "string")),
+                new JSONArray().put("type")));
+        tools.put(tool("list_timers",
+                "Listet alle laufenden Timer, Wecker und Erinnerungen mit Restzeit.",
+                new JSONObject(), new JSONArray()));
+        tools.put(tool("cancel_timer",
+                "Löscht Timer, Wecker oder Erinnerungen. label: Teil des Namens (leer = den nächsten). "
+                        + "all=true löscht alle (optional nur eines type). Stoppt auch etwas, das gerade klingelt.",
+                new JSONObject()
+                        .put("label", new JSONObject().put("type", "string"))
+                        .put("all", new JSONObject().put("type", "boolean"))
+                        .put("type", new JSONObject().put("type", "string")
+                                .put("enum", new JSONArray().put("timer").put("alarm").put("reminder"))),
+                new JSONArray()));
         tools.put(tool("flashlight",
                 "Schaltet die Taschenlampe des Handys ein (on=true) oder aus (on=false).",
                 new JSONObject().put("on", new JSONObject().put("type", "boolean")),
@@ -173,6 +197,30 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                     return playMusic(input.optString("app", "youtube"), input.optString("query", ""));
                 case "open_app":
                     return openApp(input.optString("name", ""));
+                case "create_timer": {
+                    String type = input.optString("type", "timer");
+                    long at;
+                    if (input.has("in_seconds")) {
+                        at = System.currentTimeMillis() + input.optLong("in_seconds", 60) * 1000L;
+                    } else if (input.has("at")) {
+                        at = Timers.parseAt(input.optString("at"));
+                        if (at < 0) {
+                            return "Fehler: Zeit nicht verstanden (bitte YYYY-MM-DDTHH:MM).";
+                        }
+                    } else {
+                        return "Fehler: in_seconds oder at fehlt.";
+                    }
+                    return Timers.create(ctx, type, at, input.optString("label", ""));
+                }
+                case "list_timers": {
+                    String sum = Timers.summary(ctx);
+                    return sum.isEmpty() ? "Keine Timer, Wecker oder Erinnerungen." : sum;
+                }
+                case "cancel_timer": {
+                    Timers.stopRinging(ctx);
+                    return Timers.cancel(ctx, input.optString("label", ""), input.optBoolean("all", false),
+                            input.optString("type", ""));
+                }
                 case "send_message":
                     return Messenger.send(ctx, main, input.optString("app", "whatsapp"),
                             input.optString("to", ""), input.optString("text", ""));
@@ -362,6 +410,8 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
         if (torchCameraId != null) {
             sb.append("Taschenlampe ").append(torchOn ? "an" : "aus");
         }
+        String timers = Timers.summary(ctx);
+        sb.append(timers.isEmpty() ? ", keine Timer/Wecker" : ", aktiv: " + timers);
         String s = sb.toString().trim();
         if (s.endsWith(",")) {
             s = s.substring(0, s.length() - 1);

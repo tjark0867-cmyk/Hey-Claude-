@@ -34,6 +34,11 @@ public final class ClaudeClient {
     private ClaudeClient() {
     }
 
+    /** Bekommt den Antworttext stueckweise, waehrend Claude noch schreibt (fuer schnelles Sprechen). */
+    public interface TextListener {
+        void onText(String delta);
+    }
+
     /** Werkzeuge, die die App fuer Claude ausfuehrt (z.B. Handy-Steuerung). */
     public interface ToolHandler {
         JSONArray definitions() throws JSONException;
@@ -50,13 +55,21 @@ public final class ClaudeClient {
                              String systemPrompt, List<String[]> history, LocationHelper.Place place,
                              ToolHandler tools)
             throws IOException, ApiException, JSONException {
+        return ask(apiKey, model, webSearch, lowEffort, systemPrompt, history, place, tools, null);
+    }
+
+    /** Wie oben; mit listener wird gestreamt (Text kommt stueckweise, sobald Claude ihn schreibt). */
+    public static String ask(String apiKey, String model, boolean webSearch, boolean lowEffort,
+                             String systemPrompt, List<String[]> history, LocationHelper.Place place,
+                             ToolHandler tools, TextListener listener)
+            throws IOException, ApiException, JSONException {
         try {
-            return askOnce(apiKey, model, webSearch, lowEffort, systemPrompt, history, place, tools);
+            return askOnce(apiKey, model, webSearch, lowEffort, systemPrompt, history, place, tools, listener);
         } catch (ApiException e) {
             // Falls ein Zusatz (Websuche / Effort / Werkzeuge) nicht unterstuetzt wird:
             // einmal ganz schlicht nochmal versuchen.
             if (e.status == 400 && !isCreditProblem(e.getMessage())) {
-                return askOnce(apiKey, model, false, false, systemPrompt, history, null, null);
+                return askOnce(apiKey, model, false, false, systemPrompt, history, null, null, listener);
             }
             throw e;
         }
@@ -68,7 +81,7 @@ public final class ClaudeClient {
 
     private static String askOnce(String apiKey, String model, boolean webSearch, boolean lowEffort,
                                   String systemPrompt, List<String[]> history, LocationHelper.Place place,
-                                  ToolHandler handler)
+                                  ToolHandler handler, TextListener listener)
             throws IOException, ApiException, JSONException {
         JSONArray messages = new JSONArray();
         for (String[] turn : history) {
@@ -124,7 +137,7 @@ public final class ClaudeClient {
         boolean usedTools = false;
         // pause_turn: lange Suche fortsetzen. tool_use: Werkzeug ausfuehren und Ergebnis zurueckgeben.
         for (int round = 0; round < 6; round++) {
-            JSONObject resp = post(apiKey, body);
+            JSONObject resp = listener != null ? postStream(apiKey, body, listener) : post(apiKey, body);
             JSONArray content = resp.optJSONArray("content");
             String stop = resp.optString("stop_reason");
             JSONArray results = new JSONArray();
@@ -184,6 +197,181 @@ public final class ClaudeClient {
             result = usedTools ? "Erledigt." : "Darauf habe ich leider keine Antwort bekommen.";
         }
         return result;
+    }
+
+    /**
+     * Wie post, aber mit "stream": true. Liest die Server-Sent-Events, gibt Text sofort an den listener
+     * weiter und baut daraus dieselbe Antwort-Struktur wie ohne Streaming (fuer Werkzeuge und Websuche).
+     */
+    private static JSONObject postStream(String apiKey, JSONObject body, TextListener listener)
+            throws IOException, ApiException, JSONException {
+        body.put("stream", true);
+        HttpURLConnection con = (HttpURLConnection) new URL(API_URL).openConnection();
+        try {
+            con.setRequestMethod("POST");
+            con.setConnectTimeout(15000);
+            con.setReadTimeout(90000);
+            con.setDoOutput(true);
+            con.setRequestProperty("content-type", "application/json");
+            con.setRequestProperty("accept", "text/event-stream");
+            con.setRequestProperty("x-api-key", apiKey.trim());
+            con.setRequestProperty("anthropic-version", API_VERSION);
+            OutputStream os = con.getOutputStream();
+            try {
+                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            } finally {
+                os.close();
+            }
+            int code = con.getResponseCode();
+            if (code < 200 || code >= 300) {
+                InputStream es = con.getErrorStream();
+                String text = es == null ? "" : readAll(es);
+                String msg = text;
+                try {
+                    JSONObject err = new JSONObject(text).optJSONObject("error");
+                    if (err != null) {
+                        msg = err.optString("message", text);
+                    }
+                } catch (JSONException ignored) {
+                    // Rohtext
+                }
+                throw new ApiException(code, msg);
+            }
+            java.util.TreeMap<Integer, JSONObject> blocks = new java.util.TreeMap<>();
+            java.util.HashMap<Integer, StringBuilder> inputs = new java.util.HashMap<>();
+            String stopReason = null;
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8));
+            try {
+                StringBuilder data = new StringBuilder();
+                String line;
+                while (true) {
+                    line = r.readLine();
+                    if (line == null || line.isEmpty()) {
+                        if (data.length() > 0) {
+                            String sr = handleEvent(data.toString(), blocks, inputs, listener);
+                            if (sr != null) {
+                                stopReason = sr;
+                            }
+                            data.setLength(0);
+                        }
+                        if (line == null) {
+                            break;
+                        }
+                        continue;
+                    }
+                    if (line.startsWith("data:")) {
+                        if (data.length() > 0) {
+                            data.append('\n');
+                        }
+                        data.append(line.substring(5).trim());
+                    }
+                }
+            } finally {
+                r.close();
+            }
+            JSONArray content = new JSONArray();
+            for (JSONObject b : blocks.values()) {
+                content.put(b);
+            }
+            JSONObject resp = new JSONObject();
+            resp.put("content", content);
+            resp.put("stop_reason", stopReason == null ? "end_turn" : stopReason);
+            return resp;
+        } finally {
+            body.remove("stream");
+            con.disconnect();
+        }
+    }
+
+    /** Verarbeitet ein Event. Liefert stop_reason, falls darin enthalten. */
+    private static String handleEvent(String data, java.util.TreeMap<Integer, JSONObject> blocks,
+                                      java.util.HashMap<Integer, StringBuilder> inputs, TextListener listener)
+            throws JSONException, ApiException {
+        JSONObject d = new JSONObject(data);
+        String type = d.optString("type");
+        switch (type) {
+            case "content_block_start": {
+                JSONObject cb = d.optJSONObject("content_block");
+                if (cb != null) {
+                    blocks.put(d.optInt("index"), cb);
+                }
+                return null;
+            }
+            case "content_block_delta": {
+                int idx = d.optInt("index");
+                JSONObject cb = blocks.get(idx);
+                JSONObject delta = d.optJSONObject("delta");
+                if (cb == null || delta == null) {
+                    return null;
+                }
+                switch (delta.optString("type")) {
+                    case "text_delta": {
+                        String t = delta.optString("text");
+                        cb.put("text", cb.optString("text", "") + t);
+                        if (listener != null && !t.isEmpty()) {
+                            listener.onText(t);
+                        }
+                        break;
+                    }
+                    case "thinking_delta":
+                        cb.put("thinking", cb.optString("thinking", "") + delta.optString("thinking"));
+                        break;
+                    case "signature_delta":
+                        cb.put("signature", delta.optString("signature"));
+                        break;
+                    case "input_json_delta": {
+                        StringBuilder sb = inputs.get(idx);
+                        if (sb == null) {
+                            sb = new StringBuilder();
+                            inputs.put(idx, sb);
+                        }
+                        sb.append(delta.optString("partial_json"));
+                        break;
+                    }
+                    case "citations_delta": {
+                        JSONArray cits = cb.optJSONArray("citations");
+                        if (cits == null) {
+                            cits = new JSONArray();
+                            cb.put("citations", cits);
+                        }
+                        JSONObject c = delta.optJSONObject("citation");
+                        if (c != null) {
+                            cits.put(c);
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+                return null;
+            }
+            case "content_block_stop": {
+                int idx = d.optInt("index");
+                StringBuilder sb = inputs.remove(idx);
+                JSONObject cb = blocks.get(idx);
+                if (sb != null && cb != null) {
+                    cb.put("input", sb.length() == 0 ? new JSONObject() : new JSONObject(sb.toString()));
+                }
+                return null;
+            }
+            case "message_delta": {
+                JSONObject delta = d.optJSONObject("delta");
+                if (delta != null && delta.has("stop_reason") && !delta.isNull("stop_reason")) {
+                    return delta.optString("stop_reason");
+                }
+                return null;
+            }
+            case "error": {
+                JSONObject err = d.optJSONObject("error");
+                String et = err != null ? err.optString("type") : "";
+                String msg = err != null ? err.optString("message", et) : data;
+                int status = "overloaded_error".equals(et) ? 529 : "rate_limit_error".equals(et) ? 429 : 500;
+                throw new ApiException(status, msg);
+            }
+            default:
+                return null;
+        }
     }
 
     private static JSONObject post(String apiKey, JSONObject body)

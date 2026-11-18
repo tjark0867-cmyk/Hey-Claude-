@@ -45,12 +45,21 @@ final class ElevenLabs {
     /** Erzeugt eine MP3-Datei mit dem gesprochenen Text. */
     static File synthesize(Context ctx, String apiKey, String voiceId, boolean fast, String text)
             throws IOException, ApiException, JSONException {
+        return synthesize(ctx, apiKey, voiceId, fast, text, null);
+    }
+
+    /** previousText: der zuvor gesprochene Satz – sorgt fuer natuerliche Betonung beim satzweisen Sprechen. */
+    static File synthesize(Context ctx, String apiKey, String voiceId, boolean fast, String text, String previousText)
+            throws IOException, ApiException, JSONException {
         String id = voiceId == null || voiceId.trim().isEmpty() ? DEFAULT_VOICE_ID : voiceId.trim();
         URL url = new URL(BASE + "/v1/text-to-speech/" + URLEncoder.encode(id, "UTF-8")
                 + "?output_format=mp3_44100_128");
         JSONObject body = new JSONObject();
         body.put("text", text);
         body.put("model_id", fast ? MODEL_FAST : MODEL_QUALITY);
+        if (previousText != null && !previousText.isEmpty()) {
+            body.put("previous_text", previousText);
+        }
         if (fast) {
             String lang = Locale.getDefault().getLanguage();
             if (lang != null && lang.length() == 2) {

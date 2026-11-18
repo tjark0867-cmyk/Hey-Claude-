@@ -51,6 +51,8 @@ public class Screen implements Component {
     private CheckBox webSearchBox;
     private CheckBox followUpBox;
     private CheckBox locationBox;
+    private CheckBox streamingBox;
+    private TextView timersView;
     private EditText elevenKeyEdit;
     private TextView voiceNameView;
     private TextView voiceInfoView;
@@ -202,6 +204,15 @@ public class Screen implements Component {
         webSearchBox = check("Websuche für aktuelle Infos (Wetter, News …)", Prefs.webSearch(a));
         followUpBox = check("Nach Rückfragen von Claude automatisch weiter zuhören", Prefs.followUp(a));
         locationBox = check("Standort an Claude senden (Wetter, Orte in der Nähe …)", Prefs.location(a));
+        streamingBox = check("Schneller antworten (spricht schon, während Claude noch schreibt)", Prefs.streaming(a));
+
+        header("Timer, Wecker & Erinnerungen");
+        timersView = text("–", 15, false, 4);
+        button("Alle löschen", v -> {
+            Timers.stopRinging(a);
+            Timers.cancel(a, "", true, "");
+            render();
+        });
 
         header("Stimme");
         text("ElevenLabs API-Schlüssel (für eine echte, natürliche Stimme – leer lassen = Handy-Stimme)", 14, false, 8);
@@ -272,7 +283,8 @@ public class Screen implements Component {
 
         text("So geht es: API-Schlüssel eintragen → „Starten“ → App kann geschlossen werden. "
                 + "Sag „Hey Claude“, warte auf den Piep und stell deine Frage – oder sag z.B. "
-                + "„Spiel auf YouTube Bohemian Rhapsody“, „Öffne Instagram und schreib Emily hey“, „nächstes Lied“, „Musik leiser“, "
+                + "„Spiel auf YouTube Bohemian Rhapsody“, „Öffne Instagram und schreib Emily hey“, „Timer 10 Minuten“, "
+                + "„Weck mich morgen um 7“, „Erinnere mich in einer Stunde an die Wäsche“, „nächstes Lied“, „Musik leiser“, "
                 + "„Taschenlampe an“ oder „Handy auf lautlos“. Neue Versionen kommen automatisch, "
                 + "ohne dass du etwas installieren musst.", 13, false, 20);
 
@@ -378,6 +390,9 @@ public class Screen implements Component {
             warn.append("ℹ Neue App-Hülle verfügbar (automatisches Absenden) – unten bei „Updates“.\n");
         }
         diagView.setText(Launcher.diagnostics(a));
+        String tm = Timers.summary(a);
+        timersView.setText(tm.isEmpty() ? "Keine. Sag z.B. „Hey Claude, Timer 10 Minuten“ oder „Weck mich um 7“."
+                : tm.replace("; ", "\n"));
         warnView.setText(warn.toString().trim());
         warnView.setVisibility(warn.length() == 0 ? View.GONE : View.VISIBLE);
     }
@@ -393,6 +408,7 @@ public class Screen implements Component {
         e.putBoolean(Prefs.WEB_SEARCH, webSearchBox.isChecked());
         e.putBoolean(Prefs.FOLLOW_UP, followUpBox.isChecked());
         e.putBoolean(Prefs.LOCATION, locationBox.isChecked());
+        e.putBoolean(Prefs.STREAMING, streamingBox.isChecked());
         e.putString(Prefs.ELEVEN_KEY, elevenKeyEdit.getText().toString().trim());
         e.putBoolean(Prefs.ELEVEN_FAST, elevenFastBox.isChecked());
         e.putBoolean(Prefs.AUTO_UPDATE, autoUpdateBox.isChecked());
