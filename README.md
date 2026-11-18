@@ -6,7 +6,8 @@ Sag **„Hey Claude“**, auch wenn die App geschlossen ist. Nach dem Piep stell
 1. **Wake-Word**: Ein Offline-Modell (Vosk) hört ständig auf „Hey Claude“. Dabei verlässt kein Ton das Handy.
 2. **Frage**: Nach dem Piep nimmt die Android-Spracherkennung (Google) deine Frage auf.
 3. **Antwort**: Die Frage geht an die Claude-API (Standard: `claude-haiku-5-5`, mit Websuche für Wetter, News usw.).
-4. **Vorlesen**: Die Antwort wird mit der Sprachausgabe des Handys vorgelesen. Stellt Claude eine Rückfrage, hört die App gleich weiter zu.
+4. **Vorlesen**: Die Antwort wird mit einer echten ElevenLabs-Stimme vorgelesen (oder mit der Handy-Stimme, wenn kein ElevenLabs-Schlüssel eingetragen ist). Stellt Claude eine Rückfrage, hört die App gleich weiter zu.
+5. **Standort**: Claude kennt den ungefähren Standort des Handys, zum Beispiel für das Wetter oder für Orte in der Nähe. Das lässt sich in der App ausschalten.
 
 ## APK bauen (geht auch nur mit dem Handy)
 1. Auf github.com ein **neues Repository** anlegen, zum Beispiel `hey-claude`.
@@ -20,8 +21,9 @@ Am PC kannst du stattdessen einfach den ganzen Ordnerinhalt hochladen. Der Workf
 ## Einrichten
 1. Einen **API-Schlüssel** gibt es auf https://platform.claude.com (API Keys). Dort musst du auch Guthaben aufladen, denn die API wird getrennt vom Claude-Abo bezahlt. Mit Haiku kosten Fragen nur Bruchteile eines Cents, eine Websuche etwa 1 Cent.
 2. In der App den Schlüssel eintragen → **Starten** → Mikrofon und Benachrichtigungen erlauben.
-3. **Akku-Optimierung ausschalten** antippen. Das ist vor allem bei Samsung, Xiaomi und Huawei wichtig.
-4. Die App schließen und „Hey Claude“ sagen.
+3. Für die echte Stimme: auf https://elevenlabs.io/app/settings/api-keys einen Schlüssel erstellen (mit Zugriff auf *Text to Speech* und *Voices*). Den Schlüssel in der App eintragen, dann **Stimme auswählen** → **Stimme testen**. Das Gratis-Kontingent reicht für viele kurze Antworten.
+4. **Akku-Optimierung ausschalten** antippen. Das ist vor allem bei Samsung, Xiaomi und Huawei wichtig.
+5. Die App schließen und „Hey Claude“ sagen.
 
 ## Gut zu wissen
 - Solange der Assistent läuft, siehst du eine Benachrichtigung (mit den Knöpfen „Fragen“ und „Beenden“) und den grünen Mikrofon-Punkt. Das schreibt Android vor.

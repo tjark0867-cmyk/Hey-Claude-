@@ -39,15 +39,15 @@ public final class ClaudeClient {
      * der letzte Eintrag ist die aktuelle Frage des Nutzers.
      */
     public static String ask(String apiKey, String model, boolean webSearch, boolean lowEffort,
-                             String systemPrompt, List<String[]> history)
+                             String systemPrompt, List<String[]> history, LocationHelper.Place place)
             throws IOException, ApiException, JSONException {
         try {
-            return askOnce(apiKey, model, webSearch, lowEffort, systemPrompt, history);
+            return askOnce(apiKey, model, webSearch, lowEffort, systemPrompt, history, place);
         } catch (ApiException e) {
             // Falls ein Zusatz (Websuche / Effort) vom Konto oder Modell nicht unterstuetzt wird:
             // einmal ganz schlicht nochmal versuchen.
             if (e.status == 400 && (webSearch || lowEffort) && !isCreditProblem(e.getMessage())) {
-                return askOnce(apiKey, model, false, false, systemPrompt, history);
+                return askOnce(apiKey, model, false, false, systemPrompt, history, null);
             }
             throw e;
         }
@@ -58,7 +58,7 @@ public final class ClaudeClient {
     }
 
     private static String askOnce(String apiKey, String model, boolean webSearch, boolean lowEffort,
-                                  String systemPrompt, List<String[]> history)
+                                  String systemPrompt, List<String[]> history, LocationHelper.Place place)
             throws IOException, ApiException, JSONException {
         JSONArray messages = new JSONArray();
         for (String[] turn : history) {
@@ -84,9 +84,16 @@ public final class ClaudeClient {
             JSONObject loc = new JSONObject();
             loc.put("type", "approximate");
             loc.put("timezone", TimeZone.getDefault().getID());
-            String country = Locale.getDefault().getCountry();
+            String country = place != null && place.countryCode != null
+                    ? place.countryCode : Locale.getDefault().getCountry();
             if (country != null && country.length() == 2) {
-                loc.put("country", country);
+                loc.put("country", country.toUpperCase(Locale.ROOT));
+            }
+            if (place != null && place.city != null && !place.city.isEmpty()) {
+                loc.put("city", place.city);
+            }
+            if (place != null && place.region != null && !place.region.isEmpty()) {
+                loc.put("region", place.region);
             }
             tool.put("user_location", loc);
             body.put("tools", new JSONArray().put(tool));

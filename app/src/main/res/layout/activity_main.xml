@@ -114,6 +114,73 @@
             android:layout_height="wrap_content"
             android:text="Nach Rückfragen von Claude automatisch weiter zuhören" />
 
+        <CheckBox
+            android:id="@+id/location"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Standort an Claude senden (Wetter, Orte in der Nähe …)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="24dp"
+            android:text="Stimme"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="ElevenLabs API-Schlüssel (für eine echte, natürliche Stimme – leer lassen = Handy-Stimme)" />
+
+        <EditText
+            android:id="@+id/elevenKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="sk_…"
+            android:importantForAutofill="no"
+            android:inputType="textPassword"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/getElevenKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="ElevenLabs-Schlüssel besorgen" />
+
+        <TextView
+            android:id="@+id/voiceName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="Stimme: George" />
+
+        <Button
+            android:id="@+id/chooseVoice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Stimme auswählen" />
+
+        <CheckBox
+            android:id="@+id/elevenFast"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Schneller antworten (Flash-Modell, etwas weniger natürlich)" />
+
+        <Button
+            android:id="@+id/testVoice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Stimme testen" />
+
+        <TextView
+            android:id="@+id/voiceInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:text="" />
+
         <Button
             android:id="@+id/save"
             android:layout_width="match_parent"

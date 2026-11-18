@@ -2,12 +2,15 @@ package de.heyclaude.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.widget.Button;
@@ -18,6 +21,8 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
 
@@ -31,7 +36,15 @@ public class MainActivity extends Activity {
     private EditText modelEdit;
     private CheckBox webSearchBox;
     private CheckBox followUpBox;
+    private CheckBox locationBox;
+    private EditText elevenKeyEdit;
+    private TextView voiceNameView;
+    private TextView voiceInfoView;
+    private CheckBox elevenFastBox;
     private boolean askAfterStart;
+    private Speaker testSpeaker;
+    private final ExecutorService bg = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,11 +59,29 @@ public class MainActivity extends Activity {
         modelEdit = findViewById(R.id.model);
         webSearchBox = findViewById(R.id.webSearch);
         followUpBox = findViewById(R.id.followUp);
+        locationBox = findViewById(R.id.location);
+        elevenKeyEdit = findViewById(R.id.elevenKey);
+        voiceNameView = findViewById(R.id.voiceName);
+        voiceInfoView = findViewById(R.id.voiceInfo);
+        elevenFastBox = findViewById(R.id.elevenFast);
 
         apiKeyEdit.setText(Prefs.apiKey(this));
         modelEdit.setText(Prefs.model(this));
         webSearchBox.setChecked(Prefs.webSearch(this));
         followUpBox.setChecked(Prefs.followUp(this));
+        locationBox.setChecked(Prefs.location(this));
+        elevenKeyEdit.setText(Prefs.elevenKey(this));
+        elevenFastBox.setChecked(Prefs.elevenFast(this));
+        voiceNameView.setText("Stimme: " + Prefs.elevenVoiceName(this));
+
+        Button getElevenKey = findViewById(R.id.getElevenKey);
+        getElevenKey.setOnClickListener(v -> openUrl("https://elevenlabs.io/app/settings/api-keys"));
+
+        Button chooseVoice = findViewById(R.id.chooseVoice);
+        chooseVoice.setOnClickListener(v -> chooseVoice());
+
+        Button testVoice = findViewById(R.id.testVoice);
+        testVoice.setOnClickListener(v -> testVoice());
 
         toggleButton.setOnClickListener(v -> {
             if (VoiceService.running) {
@@ -109,6 +140,76 @@ public class MainActivity extends Activity {
         String a = VoiceService.lastAnswer;
         lastQView.setText(q == null || q.isEmpty() ? "–" : q);
         lastAView.setText(a == null || a.isEmpty() ? "–" : a);
+        String info = Speaker.lastInfo;
+        voiceInfoView.setText(info == null || info.isEmpty() ? "" : "Zuletzt: " + info);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (testSpeaker != null) {
+            testSpeaker.shutdown();
+        }
+        bg.shutdownNow();
+        super.onDestroy();
+    }
+
+    private void testVoice() {
+        savePrefs();
+        if (testSpeaker == null) {
+            testSpeaker = new Speaker(this, mainHandler, bg);
+        }
+        voiceInfoView.setText(Prefs.elevenKey(this).isEmpty() ? "Handy-Stimme …" : "Erzeuge ElevenLabs-Stimme …");
+        testSpeaker.speak("Hallo! Ich bin Claude. So klinge ich, wenn ich dir antworte.", this::render);
+        mainHandler.postDelayed(this::render, 4000);
+    }
+
+    private void chooseVoice() {
+        savePrefs();
+        final String key = Prefs.elevenKey(this);
+        if (key.isEmpty()) {
+            Toast.makeText(this, "Bitte zuerst den ElevenLabs-Schlüssel eintragen", Toast.LENGTH_LONG).show();
+            elevenKeyEdit.requestFocus();
+            return;
+        }
+        Toast.makeText(this, "Lade Stimmen …", Toast.LENGTH_SHORT).show();
+        bg.execute(() -> {
+            try {
+                final List<String[]> voices = ElevenLabs.listVoices(key);
+                runOnUiThread(() -> showVoiceDialog(voices));
+            } catch (ElevenLabs.ApiException e) {
+                final String msg = ElevenLabs.explain(e);
+                runOnUiThread(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show());
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Stimmen konnten nicht geladen werden", Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void showVoiceDialog(final List<String[]> voices) {
+        if (isFinishing()) {
+            return;
+        }
+        if (voices.isEmpty()) {
+            Toast.makeText(this, "Keine Stimmen im Konto gefunden", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String[] labels = new String[voices.size()];
+        for (int i = 0; i < voices.size(); i++) {
+            labels[i] = voices.get(i)[2];
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Stimme wählen")
+                .setItems(labels, (dialog, which) -> {
+                    String[] v = voices.get(which);
+                    Prefs.get(this).edit()
+                            .putString(Prefs.ELEVEN_VOICE_ID, v[0])
+                            .putString(Prefs.ELEVEN_VOICE_NAME, v[1])
+                            .apply();
+                    voiceNameView.setText("Stimme: " + v[1]);
+                    testVoice();
+                })
+                .setNegativeButton("Abbrechen", null)
+                .show();
     }
 
     private void savePrefs() {
@@ -118,6 +219,9 @@ public class MainActivity extends Activity {
         e.putString(Prefs.MODEL, model.isEmpty() ? Prefs.DEFAULT_MODEL : model);
         e.putBoolean(Prefs.WEB_SEARCH, webSearchBox.isChecked());
         e.putBoolean(Prefs.FOLLOW_UP, followUpBox.isChecked());
+        e.putBoolean(Prefs.LOCATION, locationBox.isChecked());
+        e.putString(Prefs.ELEVEN_KEY, elevenKeyEdit.getText().toString().trim());
+        e.putBoolean(Prefs.ELEVEN_FAST, elevenFastBox.isChecked());
         e.apply();
     }
 
@@ -135,6 +239,10 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             needed.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        if (locationBox.isChecked() && !LocationHelper.hasPermission(this)) {
+            needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         }
         if (!needed.isEmpty()) {
             requestPermissions(needed.toArray(new String[0]), REQ_PERMS);

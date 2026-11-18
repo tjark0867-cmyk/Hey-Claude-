@@ -10,8 +10,6 @@ import android.content.Intent;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.graphics.drawable.Icon;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -27,8 +25,6 @@ import android.speech.RecognitionListener;
 import android.speech.RecognitionService;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
-import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -54,7 +50,7 @@ import java.util.regex.Pattern;
  * 3. fragt Claude ueber die API,
  * 4. liest die Antwort vor (Text-to-Speech).
  */
-public class VoiceService extends Service implements TextToSpeech.OnInitListener {
+public class VoiceService extends Service {
 
     private static final String TAG = "HeyClaude";
 
@@ -72,11 +68,6 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
             "(^|\\s)(hey|hi)\\s+(claude|cloud|clod|clot|clawed)(\\s|$)");
     private static final Pattern STOP_PATTERN = Pattern.compile(
             "^(stopp?|abbrechen|vergiss es|nichts|egal|ruhe|halt|schon gut|nein danke)$");
-
-    private static final AudioAttributes SPEECH_ATTRS = new AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANT)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build();
 
     // ---- Status fuer die Oberflaeche ----
     static volatile boolean running;
@@ -99,15 +90,11 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
     private WakeThread wakeThread;
     private SpeechRecognizer recognizer;
     private int srSession;
-    private TextToSpeech tts;
-    private boolean ttsReady;
-    private boolean ttsFailed;
-    private String pendingSpeech;
-    private boolean pendingFollowUp;
+    private Speaker speaker;
+    private LocationHelper locationHelper;
     private boolean followUpAfterSpeech;
     private long lastInteraction;
     private PowerManager.WakeLock wakeLock;
-    private AudioFocusRequest focusRequest;
 
     // ------------------------------------------------------------------ Lebenszyklus
 
@@ -120,7 +107,8 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
                 NotificationManager.IMPORTANCE_LOW);
         ch.setShowBadge(false);
         nm.createNotificationChannel(ch);
-        tts = new TextToSpeech(this, this);
+        speaker = new Speaker(this, main, worker);
+        locationHelper = new LocationHelper(this);
         PowerManager pm = getSystemService(PowerManager.class);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HeyClaude:listen");
         wakeLock.setReferenceCounted(false);
@@ -138,7 +126,16 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
             try {
                 Notification n = buildNotification("Starte …");
                 if (Build.VERSION.SDK_INT >= 29) {
-                    startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                    int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+                    if (Prefs.location(this) && LocationHelper.hasPermission(this)) {
+                        types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+                    }
+                    try {
+                        startForeground(NOTIF_ID, n, types);
+                    } catch (SecurityException e) {
+                        // Standort-Typ nicht erlaubt -> nur Mikrofon
+                        startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                    }
                 } else {
                     startForeground(NOTIF_ID, n);
                 }
@@ -153,6 +150,9 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
             }
             setStatus("Lade Wake-Word …");
             loadModel();
+            if (Prefs.location(this)) {
+                worker.execute(() -> locationHelper.get(5000)); // Standort schon mal vorab holen
+            }
         }
         if (ACTION_ASK.equals(action)) {
             main.post(this::onWakeWord);
@@ -172,11 +172,9 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
         main.removeCallbacksAndMessages(null);
         stopWakeThread();
         destroyRecognizer();
-        if (tts != null) {
-            tts.stop();
-            tts.shutdown();
+        if (speaker != null) {
+            speaker.shutdown();
         }
-        abandonFocus();
         worker.shutdownNow();
         if (voskModel != null) {
             try {
@@ -392,9 +390,8 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
         if (destroyed || state == State.LISTENING || state == State.THINKING) {
             return;
         }
-        if (state == State.SPEAKING && tts != null) {
-            tts.stop();
-            abandonFocus();
+        if (state == State.SPEAKING) {
+            speaker.stop();
         }
         stopWakeThread();
         state = State.LISTENING;
@@ -573,13 +570,15 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
         final List<String[]> snapshot = new ArrayList<>(history);
         final String model = Prefs.model(this);
         final boolean web = Prefs.webSearch(this);
-        final String system = systemPrompt(web);
+        final boolean useLocation = Prefs.location(this);
 
         worker.execute(() -> {
             String answer;
             boolean ok = false;
             try {
-                answer = ClaudeClient.ask(apiKey, model, web, true, system, snapshot);
+                LocationHelper.Place place = useLocation ? locationHelper.get(4000) : null;
+                String system = systemPrompt(web, place);
+                answer = ClaudeClient.ask(apiKey, model, web, true, system, snapshot, place);
                 ok = true;
             } catch (ClaudeClient.ApiException e) {
                 Log.e(TAG, "API-Fehler " + e.status + ": " + e.getMessage());
@@ -635,7 +634,7 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
         return "Die Anfrage hat nicht geklappt, Fehler " + e.status + ".";
     }
 
-    private static String systemPrompt(boolean web) {
+    private static String systemPrompt(boolean web, LocationHelper.Place place) {
         SimpleDateFormat f = new SimpleDateFormat("EEEE, d. MMMM yyyy, HH:mm 'Uhr'", Locale.GERMAN);
         f.setTimeZone(TimeZone.getDefault());
         StringBuilder sb = new StringBuilder();
@@ -652,6 +651,16 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
             sb.append("Für aktuelle Informationen wie Wetter, Nachrichten, Sportergebnisse, Öffnungszeiten oder Preise nutze die Websuche. ");
             sb.append("Nenne keine Quellen-URLs, fasse das Ergebnis einfach in eigenen Worten zusammen. ");
         }
+        if (place != null) {
+            String where = place.describe();
+            sb.append("Aktueller Standort des Handys: ");
+            sb.append(where.isEmpty() ? "unbekannte Adresse" : where);
+            sb.append(String.format(Locale.ROOT, " (Koordinaten %.5f, %.5f; Genauigkeit etwa %d m; ermittelt vor %d Minuten). ",
+                    place.lat, place.lon, Math.round(place.accuracy),
+                    Math.max(0, (System.currentTimeMillis() - place.time) / 60000)));
+            sb.append("Wenn der Nutzer nach Wetter, Orten in der Nähe, Wegen oder Ähnlichem fragt, ohne einen Ort zu nennen, beziehe dich auf diesen Standort. ");
+            sb.append("Wenn er fragt, wo er ist, sag es ihm. ");
+        }
         sb.append("Aktuelles Datum und Uhrzeit: ").append(f.format(new Date()))
                 .append(" (Zeitzone ").append(TimeZone.getDefault().getID()).append(").");
         return sb.toString();
@@ -659,120 +668,26 @@ public class VoiceService extends Service implements TextToSpeech.OnInitListener
 
     // ------------------------------------------------------------------ Sprachausgabe
 
-    @Override
-    public void onInit(int status) {
-        if (destroyed) {
-            return;
-        }
-        if (status != TextToSpeech.SUCCESS) {
-            ttsFailed = true;
-            Log.e(TAG, "TextToSpeech init fehlgeschlagen: " + status);
-        } else {
-            int r = tts.setLanguage(Locale.getDefault());
-            if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
-                tts.setLanguage(Locale.GERMAN);
-            }
-            tts.setAudioAttributes(SPEECH_ATTRS);
-            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override
-                public void onStart(String utteranceId) {
-                }
-
-                @Override
-                public void onDone(String utteranceId) {
-                    main.post(VoiceService.this::onSpeechFinished);
-                }
-
-                @Override
-                @SuppressWarnings("deprecation")
-                public void onError(String utteranceId) {
-                    main.post(VoiceService.this::onSpeechFinished);
-                }
-            });
-            ttsReady = true;
-        }
-        if (pendingSpeech != null) {
-            String s = pendingSpeech;
-            pendingSpeech = null;
-            speak(s, pendingFollowUp);
-        }
-    }
-
     private void speak(String text, boolean followUp) {
         if (destroyed) {
             return;
         }
         state = State.SPEAKING;
-        setStatus("Spreche …");
-        if (!ttsReady) {
-            if (ttsFailed) {
-                // Keine Sprachausgabe moeglich: Antwort nur in der Benachrichtigung zeigen
-                lastAnswer = text;
-                returnToWake();
-            } else {
-                pendingSpeech = text;
-                pendingFollowUp = followUp;
-            }
-            return;
-        }
         followUpAfterSpeech = followUp;
-        requestFocus();
-        Bundle params = new Bundle();
-        String clean = cleanForSpeech(text);
-        int max = Math.min(3900, TextToSpeech.getMaxSpeechInputLength() - 10);
-        if (clean.length() > max) {
-            clean = clean.substring(0, max);
-        }
-        int r = tts.speak(clean, TextToSpeech.QUEUE_FLUSH, params,
-                "answer-" + System.currentTimeMillis());
-        if (r != TextToSpeech.SUCCESS) {
-            onSpeechFinished();
-        }
+        setStatus("Spreche …");
+        speaker.speak(text, this::onSpeechFinished);
     }
 
     private void onSpeechFinished() {
         if (destroyed || state != State.SPEAKING) {
             return;
         }
-        abandonFocus();
         if (followUpAfterSpeech) {
             followUpAfterSpeech = false;
             state = State.IDLE;
             onWakeWord(); // Rueckfrage: direkt weiter zuhoeren
         } else {
             returnToWake();
-        }
-    }
-
-    static String cleanForSpeech(String s) {
-        String t = s.replaceAll("\\[([^\\]]+)\\]\\([^)]*\\)", "$1");
-        t = t.replaceAll("https?://\\S+", "");
-        t = t.replaceAll("(?m)^\\s*[-*•]\\s+", "");
-        t = t.replaceAll("(?m)^\\s*#+\\s*", "");
-        t = t.replace("**", "").replace("__", "").replace("`", "").replace("*", "");
-        return t.trim();
-    }
-
-    private void requestFocus() {
-        try {
-            AudioManager am = getSystemService(AudioManager.class);
-            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                    .setAudioAttributes(SPEECH_ATTRS)
-                    .build();
-            am.requestAudioFocus(focusRequest);
-        } catch (Exception e) {
-            Log.w(TAG, "Audiofokus", e);
-        }
-    }
-
-    private void abandonFocus() {
-        if (focusRequest != null) {
-            try {
-                getSystemService(AudioManager.class).abandonAudioFocusRequest(focusRequest);
-            } catch (Exception ignored) {
-                // egal
-            }
-            focusRequest = null;
         }
     }
 
