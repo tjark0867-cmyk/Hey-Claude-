@@ -92,6 +92,8 @@ public class VoiceService extends Service {
     private int srSession;
     private Speaker speaker;
     private LocationHelper locationHelper;
+    private DeviceControl device;
+    private android.media.AudioFocusRequest sessionFocus;
     private boolean followUpAfterSpeech;
     private long lastInteraction;
     private PowerManager.WakeLock wakeLock;
@@ -109,6 +111,7 @@ public class VoiceService extends Service {
         nm.createNotificationChannel(ch);
         speaker = new Speaker(this, main, worker);
         locationHelper = new LocationHelper(this);
+        device = new DeviceControl(this, main);
         PowerManager pm = getSystemService(PowerManager.class);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HeyClaude:listen");
         wakeLock.setReferenceCounted(false);
@@ -179,6 +182,10 @@ public class VoiceService extends Service {
         if (speaker != null) {
             speaker.shutdown();
         }
+        if (device != null) {
+            device.shutdown();
+        }
+        abandonSessionFocus();
         worker.shutdownNow();
         if (voskModel != null) {
             try {
@@ -408,6 +415,7 @@ public class VoiceService extends Service {
         if (destroyed) {
             return;
         }
+        abandonSessionFocus();
         destroyRecognizer();
         if (voskModel != null) {
             state = State.WAKE;
@@ -433,6 +441,7 @@ public class VoiceService extends Service {
             speaker.stop();
         }
         stopWakeThread();
+        requestSessionFocus();
         state = State.LISTENING;
         setStatus("Ich höre zu …");
         beep();
@@ -588,7 +597,10 @@ public class VoiceService extends Service {
     private void handleQuestion(String text) {
         lastQuestion = text;
         String normalized = text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N} ]", "").trim();
-        if (STOP_PATTERN.matcher(normalized).matches()) {
+        if (STOP_PATTERN.matcher(normalized).matches() || normalized.equals("pause")) {
+            if (device.isMusicActive()) {
+                device.sendMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PAUSE); // "Stopp" haelt die Musik an
+            }
             beep();
             returnToWake();
             return;
@@ -616,8 +628,8 @@ public class VoiceService extends Service {
             boolean ok = false;
             try {
                 LocationHelper.Place place = useLocation ? locationHelper.get(4000) : null;
-                String system = systemPrompt(web, place);
-                answer = ClaudeClient.ask(apiKey, model, web, true, system, snapshot, place);
+                String system = systemPrompt(web, place, device.statusLine());
+                answer = ClaudeClient.ask(apiKey, model, web, true, system, snapshot, place, device);
                 ok = true;
             } catch (ClaudeClient.ApiException e) {
                 Log.e(TAG, "API-Fehler " + e.status + ": " + e.getMessage());
@@ -673,7 +685,7 @@ public class VoiceService extends Service {
         return "Die Anfrage hat nicht geklappt, Fehler " + e.status + ".";
     }
 
-    private static String systemPrompt(boolean web, LocationHelper.Place place) {
+    private static String systemPrompt(boolean web, LocationHelper.Place place, String deviceStatus) {
         SimpleDateFormat f = new SimpleDateFormat("EEEE, d. MMMM yyyy, HH:mm 'Uhr'", Locale.GERMAN);
         f.setTimeZone(TimeZone.getDefault());
         StringBuilder sb = new StringBuilder();
@@ -684,8 +696,14 @@ public class VoiceService extends Service {
         sb.append("Benutze niemals Markdown, Listen, Aufzählungszeichen, Überschriften, Emojis, Tabellen oder Links. ");
         sb.append("Schreibe Zahlen, Einheiten und Abkürzungen so, dass sie vorgelesen gut klingen. ");
         sb.append("Die Frage stammt aus einer Spracherkennung und kann falsch verstandene Wörter enthalten – interpretiere sie sinnvoll. ");
-        sb.append("Du kannst am Handy selbst nichts steuern (keine Timer, Wecker, Anrufe, Musik oder Smart-Home). ");
-        sb.append("Wenn jemand so etwas möchte, sag das kurz und ehrlich. ");
+        sb.append("Du kannst das Handy steuern: Musik und Medien (abspielen, pausieren, nächster oder vorheriger Titel), ");
+        sb.append("Lautstärke, Klingelmodus (normal, vibrieren, lautlos) und Taschenlampe. Benutze dafür die passenden Werkzeuge. ");
+        sb.append("Nach einer reinen Handy-Steuerung antworte nur ganz kurz, zum Beispiel „Okay.“ oder „Taschenlampe ist an.“ ");
+        sb.append("Wenn ein Werkzeug einen Fehler meldet, erkläre kurz, was der Nutzer tun kann. ");
+        sb.append("Andere Dinge wie Apps öffnen, Anrufe, Nachrichten, WLAN, Bluetooth, Helligkeit, Timer oder Wecker kannst du noch nicht – sag das ehrlich. ");
+        if (deviceStatus != null && !deviceStatus.isEmpty()) {
+            sb.append("Aktueller Handy-Status: ").append(deviceStatus).append(". ");
+        }
         if (web) {
             sb.append("Für aktuelle Informationen wie Wetter, Nachrichten, Sportergebnisse, Öffnungszeiten oder Preise nutze die Websuche. ");
             sb.append("Nenne keine Quellen-URLs, fasse das Ergebnis einfach in eigenen Worten zusammen. ");
@@ -727,6 +745,32 @@ public class VoiceService extends Service {
             onWakeWord(); // Rueckfrage: direkt weiter zuhoeren
         } else {
             returnToWake();
+        }
+    }
+
+    /** Waehrend eines Gespraechs laeuft Musik leiser (wie bei Alexa). */
+    private void requestSessionFocus() {
+        if (sessionFocus != null) {
+            return;
+        }
+        try {
+            sessionFocus = new android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(Speaker.ATTRS)
+                    .build();
+            getSystemService(AudioManager.class).requestAudioFocus(sessionFocus);
+        } catch (Exception e) {
+            sessionFocus = null;
+        }
+    }
+
+    private void abandonSessionFocus() {
+        if (sessionFocus != null) {
+            try {
+                getSystemService(AudioManager.class).abandonAudioFocusRequest(sessionFocus);
+            } catch (Exception ignored) {
+                // egal
+            }
+            sessionFocus = null;
         }
     }
 

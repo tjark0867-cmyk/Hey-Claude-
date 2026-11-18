@@ -126,6 +126,16 @@ public class MainActivity extends Activity {
         Button getKey = findViewById(R.id.getKey);
         getKey.setOnClickListener(v -> openUrl("https://platform.claude.com/settings/keys"));
 
+        Button dnd = findViewById(R.id.dndAccess);
+        dnd.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
+                Toast.makeText(this, "„Hey Claude“ erlauben", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "Bitte in den Einstellungen „Nicht stören“-Zugriff erlauben", Toast.LENGTH_LONG).show();
+            }
+        });
+
         Button battery = findViewById(R.id.battery);
         battery.setOnClickListener(v -> requestBatteryExemption());
 

@@ -34,20 +34,29 @@ public final class ClaudeClient {
     private ClaudeClient() {
     }
 
+    /** Werkzeuge, die die App fuer Claude ausfuehrt (z.B. Handy-Steuerung). */
+    public interface ToolHandler {
+        JSONArray definitions() throws JSONException;
+
+        /** Ergebnis als Text; beginnt mit "Fehler", wenn es nicht geklappt hat. */
+        String run(String name, JSONObject input);
+    }
+
     /**
      * Stellt eine Frage. history enthaelt abwechselnd {"user", text} und {"assistant", text},
      * der letzte Eintrag ist die aktuelle Frage des Nutzers.
      */
     public static String ask(String apiKey, String model, boolean webSearch, boolean lowEffort,
-                             String systemPrompt, List<String[]> history, LocationHelper.Place place)
+                             String systemPrompt, List<String[]> history, LocationHelper.Place place,
+                             ToolHandler tools)
             throws IOException, ApiException, JSONException {
         try {
-            return askOnce(apiKey, model, webSearch, lowEffort, systemPrompt, history, place);
+            return askOnce(apiKey, model, webSearch, lowEffort, systemPrompt, history, place, tools);
         } catch (ApiException e) {
-            // Falls ein Zusatz (Websuche / Effort) vom Konto oder Modell nicht unterstuetzt wird:
+            // Falls ein Zusatz (Websuche / Effort / Werkzeuge) nicht unterstuetzt wird:
             // einmal ganz schlicht nochmal versuchen.
-            if (e.status == 400 && (webSearch || lowEffort) && !isCreditProblem(e.getMessage())) {
-                return askOnce(apiKey, model, false, false, systemPrompt, history, null);
+            if (e.status == 400 && !isCreditProblem(e.getMessage())) {
+                return askOnce(apiKey, model, false, false, systemPrompt, history, null, null);
             }
             throw e;
         }
@@ -58,7 +67,8 @@ public final class ClaudeClient {
     }
 
     private static String askOnce(String apiKey, String model, boolean webSearch, boolean lowEffort,
-                                  String systemPrompt, List<String[]> history, LocationHelper.Place place)
+                                  String systemPrompt, List<String[]> history, LocationHelper.Place place,
+                                  ToolHandler handler)
             throws IOException, ApiException, JSONException {
         JSONArray messages = new JSONArray();
         for (String[] turn : history) {
@@ -76,6 +86,7 @@ public final class ClaudeClient {
         if (lowEffort) {
             body.put("output_config", new JSONObject().put("effort", "low"));
         }
+        JSONArray tools = new JSONArray();
         if (webSearch) {
             JSONObject tool = new JSONObject();
             tool.put("type", "web_search_20250305");
@@ -96,27 +107,70 @@ public final class ClaudeClient {
                 loc.put("region", place.region);
             }
             tool.put("user_location", loc);
-            body.put("tools", new JSONArray().put(tool));
+            tools.put(tool);
+        }
+        if (handler != null) {
+            JSONArray defs = handler.definitions();
+            for (int i = 0; i < defs.length(); i++) {
+                tools.put(defs.optJSONObject(i));
+            }
+        }
+        if (tools.length() > 0) {
+            body.put("tools", tools);
         }
 
         StringBuilder answer = new StringBuilder();
-        // Lange Suchen koennen mit stop_reason "pause_turn" unterbrochen werden -> fortsetzen.
-        for (int round = 0; round < 4; round++) {
+        String beforeTools = "";
+        boolean usedTools = false;
+        // pause_turn: lange Suche fortsetzen. tool_use: Werkzeug ausfuehren und Ergebnis zurueckgeben.
+        for (int round = 0; round < 6; round++) {
             JSONObject resp = post(apiKey, body);
             JSONArray content = resp.optJSONArray("content");
+            String stop = resp.optString("stop_reason");
+            JSONArray results = new JSONArray();
             if (content != null) {
                 for (int i = 0; i < content.length(); i++) {
                     JSONObject block = content.optJSONObject(i);
-                    if (block != null && "text".equals(block.optString("type"))) {
+                    if (block == null) {
+                        continue;
+                    }
+                    String type = block.optString("type");
+                    if ("text".equals(type)) {
                         answer.append(block.optString("text"));
+                    } else if ("tool_use".equals(type) && handler != null) {
+                        JSONObject input = block.optJSONObject("input");
+                        String out = handler.run(block.optString("name"), input != null ? input : new JSONObject());
+                        JSONObject r = new JSONObject();
+                        r.put("type", "tool_result");
+                        r.put("tool_use_id", block.optString("id"));
+                        r.put("content", out);
+                        if (out.startsWith("Fehler")) {
+                            r.put("is_error", true);
+                        }
+                        results.put(r);
                     }
                 }
             }
-            if ("pause_turn".equals(resp.optString("stop_reason")) && content != null) {
+            boolean toolStop = "tool_use".equals(stop);
+            if ((toolStop || "pause_turn".equals(stop)) && content != null) {
+                if (toolStop && results.length() == 0) {
+                    break;
+                }
                 JSONObject assistant = new JSONObject();
                 assistant.put("role", "assistant");
                 assistant.put("content", content);
                 messages.put(assistant);
+                if (toolStop) {
+                    usedTools = true;
+                    if (answer.length() > 0) {
+                        beforeTools = answer.toString();
+                        answer.setLength(0);
+                    }
+                    JSONObject user = new JSONObject();
+                    user.put("role", "user");
+                    user.put("content", results);
+                    messages.put(user);
+                }
                 body.put("messages", messages);
                 continue;
             }
@@ -124,7 +178,10 @@ public final class ClaudeClient {
         }
         String result = answer.toString().trim();
         if (result.isEmpty()) {
-            result = "Darauf habe ich leider keine Antwort bekommen.";
+            result = beforeTools.trim();
+        }
+        if (result.isEmpty()) {
+            result = usedTools ? "Erledigt." : "Darauf habe ich leider keine Antwort bekommen.";
         }
         return result;
     }

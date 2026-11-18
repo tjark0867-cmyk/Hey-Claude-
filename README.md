@@ -7,7 +7,8 @@ Sag **„Hey Claude“**, auch wenn die App geschlossen ist. Nach dem Piep stell
 2. **Frage**: Nach dem Piep nimmt die Android-Spracherkennung (Google) deine Frage auf.
 3. **Antwort**: Die Frage geht an die Claude-API (Standard: `claude-haiku-5-5`, mit Websuche für Wetter, News usw.).
 4. **Vorlesen**: Die Antwort wird mit einer echten ElevenLabs-Stimme vorgelesen (oder mit der Handy-Stimme, wenn kein ElevenLabs-Schlüssel eingetragen ist). Stellt Claude eine Rückfrage, hört die App gleich weiter zu.
-5. **Standort**: Claude kennt den ungefähren Standort des Handys, zum Beispiel für das Wetter oder für Orte in der Nähe. Das lässt sich in der App ausschalten.
+5. **Handy steuern**: „Nächstes Lied“, „Musik pausieren“, „Mach lauter“, „Lautstärke auf 30 Prozent“, „Handy auf lautlos“, „Taschenlampe an“ oder „Wie viel Akku habe ich?“. Während du sprichst, wird die Musik leiser, und „Hey Claude, stopp“ hält die Musik an.
+6. **Standort**: Claude kennt den ungefähren Standort des Handys, zum Beispiel für das Wetter oder für Orte in der Nähe. Das lässt sich in der App ausschalten.
 
 ## APK bauen (geht auch nur mit dem Handy)
 1. Auf github.com ein **neues Repository** anlegen, zum Beispiel `hey-claude`.
@@ -36,4 +37,5 @@ Ab Version 1.3 aktualisiert sich die App selbst. Etwa alle 6 Stunden schaut sie 
 - Nach einem **Neustart des Handys** erscheint ein Hinweis. Tippst du darauf, startet der Assistent wieder. Ab Android 14 darf ein Mikrofon-Dienst nicht ganz von selbst starten.
 - Das Wake-Word-Modell ist englisch. Am zuverlässigsten klappt es, wenn du „Hey Claude“ englisch aussprichst (etwa „Hey Klod“).
 - Mit „Stopp“ oder „Abbrechen“ nach dem Piep brichst du ab.
-- Claude kann am Handy selbst nichts steuern, also keine Timer, Anrufe oder Musik. Die App beantwortet nur Fragen.
+- Komplett lautlos stellen geht erst, wenn du in der App „Lautlos-Modus erlauben“ antippst. Ohne diese Erlaubnis stellt Claude das Handy nur auf Vibration.
+- Apps öffnen, Anrufe, Timer und Wecker kann Claude noch nicht.
