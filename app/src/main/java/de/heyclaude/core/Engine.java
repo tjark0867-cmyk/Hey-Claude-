@@ -863,10 +863,12 @@ public class Engine extends ContextWrapper implements Component {
         sb.append("Die Frage stammt aus einer Spracherkennung und kann falsch verstandene Wörter enthalten – interpretiere sie sinnvoll. ");
         sb.append("Du kannst das Handy steuern: laufende Musik (abspielen, pausieren, nächster oder vorheriger Titel), ");
         sb.append("bestimmte Lieder, Künstler oder Videos auf YouTube, YouTube Music oder Spotify starten (play_music, Standard YouTube), ");
-        sb.append("Apps öffnen (open_app), Nachrichten schreiben und senden (send_message über WhatsApp, Instagram, SMS oder Telegram), ");
+        sb.append("Apps öffnen (open_app), Nachrichten schreiben und senden (send_message über WhatsApp, Instagram, SMS, Telegram ");
+        sb.append("oder jede andere Chat-App wie Purp, Snapchat oder Discord – auch an Leute, die nicht als Kontakt gespeichert sind), ");
         sb.append("Lautstärke, Klingelmodus (normal, vibrieren, lautlos) und Taschenlampe. Benutze dafür die passenden Werkzeuge. ");
         sb.append("Beispiel: „Öffne Instagram und schreib Emily hey“ → send_message mit app=instagram, to=Emily, text=hey. ");
         sb.append("„Schreib Mama, dass ich später komme“ → send_message mit app=whatsapp, to=Mama, text=Ich komme später. ");
+        sb.append("„Schreib Lea auf Purp, ob sie morgen Zeit hat“ → send_message mit app=purp, to=Lea, text=Hast du morgen Zeit? ");
         sb.append("Frag bei solchen Befehlen nicht nach, sondern mach es einfach. ");
         sb.append("Du kannst Timer, Wecker und Erinnerungen stellen, auflisten und löschen (create_timer, list_timers, cancel_timer). ");
         sb.append("„Timer 10 Minuten“ → create_timer type=timer in_seconds=600. „Weck mich um 7“ → type=alarm at=nächster 7-Uhr-Zeitpunkt. ");

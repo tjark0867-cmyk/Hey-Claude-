@@ -42,6 +42,9 @@ final class Messenger {
         }
         copyToClipboard(ctx, msg); // Rueckfall: Text liegt in der Zwischenablage
         switch (a) {
+            case "":
+            case "whatsapp":
+                return whatsapp(ctx, main, recipient, msg);
             case "instagram":
                 return instagram(ctx, main, recipient, msg);
             case "sms":
@@ -49,7 +52,7 @@ final class Messenger {
             case "telegram":
                 return telegram(ctx, main, recipient, msg);
             default:
-                return whatsapp(ctx, main, recipient, msg);
+                return anyApp(ctx, main, app.trim(), recipient, msg); // Purp, Snapchat, Discord …
         }
     }
 
@@ -109,7 +112,7 @@ final class Messenger {
             mode = Automation.MODE_SEND;
         } else {
             i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.instagram.com/direct/inbox/"));
-            mode = Automation.MODE_SEARCH_SEND;
+            mode = Automation.MODE_FIND_SEND;
         }
         i.setPackage(INSTAGRAM);
         Launcher.launch(ctx, main, i, "Instagram: " + to);
@@ -136,6 +139,24 @@ final class Messenger {
         i.setPackage(TELEGRAM);
         Launcher.launch(ctx, main, i, "Telegram: " + to);
         return autoSend(ctx, TELEGRAM, msg, user, mode);
+    }
+
+    /** Beliebige Chat-App: oeffnen, Chat per Name finden (Liste, Chats-Tab, Suche), pruefen, senden. */
+    private static String anyApp(Context ctx, Handler main, String appName, String to, String msg) {
+        String[] found = Launcher.findApp(ctx, appName);
+        if (found == null) {
+            return "Fehler: Die App „" + appName + "“ habe ich auf dem Handy nicht gefunden.";
+        }
+        Intent i = ctx.getPackageManager().getLaunchIntentForPackage(found[0]);
+        if (i == null) {
+            return "Fehler: " + found[1] + " lässt sich nicht öffnen.";
+        }
+        Launcher.launch(ctx, main, i, found[1] + ": " + to);
+        if (!Automation.available()) {
+            return "OK: " + found[1] + " geöffnet, Text in der Zwischenablage (zum automatischen Senden die Bedienungshilfe einschalten)";
+        }
+        Automation.start(new Automation.Job(ctx, found[0], msg, to, Automation.MODE_FIND_SEND));
+        return "OK: Nachricht wird in " + found[1] + " gesendet";
     }
 
     private static String autoSend(Context ctx, String pkg, String msg, String recipient, int mode) {

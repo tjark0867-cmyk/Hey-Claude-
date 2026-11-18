@@ -126,12 +126,13 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                         .put("description", "Name der App, wie er auf dem Handy heißt")),
                 new JSONArray().put("name")));
         tools.put(tool("send_message",
-                "Schreibt und sendet eine Nachricht an eine Person. app: whatsapp (Standard), instagram, sms oder telegram. "
-                        + "to: Name des Kontakts so wie der Nutzer ihn sagt (z.B. \"Emily\") oder ein Benutzername. "
+                "Schreibt und sendet eine Nachricht an eine Person – in jeder Chat-App, auch an Leute, die nicht als "
+                        + "Kontakt gespeichert sind. app: whatsapp (Standard), instagram, sms, telegram oder der Name jeder "
+                        + "anderen App auf dem Handy (z.B. purp, snapchat, discord, tiktok). "
+                        + "to: Name der Person so wie er in der App angezeigt wird bzw. wie der Nutzer ihn sagt (z.B. \"Emily\"). "
                         + "text: die Nachricht genau so, wie der Nutzer sie haben will.",
                 new JSONObject()
-                        .put("app", new JSONObject().put("type", "string")
-                                .put("enum", new JSONArray().put("whatsapp").put("instagram").put("sms").put("telegram")))
+                        .put("app", new JSONObject().put("type", "string"))
                         .put("to", new JSONObject().put("type", "string"))
                         .put("text", new JSONObject().put("type", "string")),
                 new JSONArray().put("to").put("text")));
