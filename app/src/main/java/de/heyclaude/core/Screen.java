@@ -59,6 +59,11 @@ public class Screen implements Component {
     private TextView updateInfoView;
     private Button allowUpdatesButton;
     private Button overlayButton;
+    private Button contactsButton;
+    private Button accessibilityButton;
+    private Button appInfoButton;
+    private Button shellButton;
+    private TextView warnView;
     private LinearLayout box;
     private boolean askAfterStart;
     private Speaker testSpeaker;
@@ -158,6 +163,8 @@ public class Screen implements Component {
         a.setContentView(scroll);
 
         statusView = text("Gestoppt", 22, true, 0);
+        warnView = text("", 14, true, 4);
+        warnView.setTextColor(0xFFC0392B);
         toggleButton = button("Starten", v -> {
             if (Engine.running) {
                 Prefs.setEnabled(a, false);
@@ -210,7 +217,11 @@ public class Screen implements Component {
         });
 
         header("Erlaubnisse");
-        overlayButton = button("Apps & YouTube starten erlauben („Über anderen Apps einblenden“)", v -> openOverlaySettings());
+        overlayButton = button("Apps & YouTube direkt öffnen erlauben („Über anderen Apps einblenden“)", v -> openOverlaySettings());
+        contactsButton = button("Kontakte erlauben (für Nachrichten an Namen)", v ->
+                a.requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_PERMS + 1));
+        accessibilityButton = button("Nachrichten automatisch absenden: Bedienungshilfe einschalten", v -> openAccessibility());
+        appInfoButton = button("Bedienungshilfe ausgegraut? App-Info öffnen → ⋮ → „Eingeschränkte Einstellungen zulassen“", v -> openAppInfo());
         button("Lautlos-Modus erlauben (für „Mach das Handy lautlos“)", v -> {
             try {
                 a.startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
@@ -225,11 +236,12 @@ public class Screen implements Component {
         updateInfoView = text("", 14, false, 4);
         autoUpdateBox = check("Automatisch aktualisieren", Prefs.autoUpdate(a));
         allowUpdatesButton = button("App-Updates erlauben (selten nötig)", v -> openUnknownSources());
+        shellButton = button("Neue App-Hülle installieren (für automatisches Senden)", v -> confirmShellInstall());
         button("Jetzt nach Update suchen", v -> checkForUpdate(true));
 
         text("So geht es: API-Schlüssel eintragen → „Starten“ → App kann geschlossen werden. "
                 + "Sag „Hey Claude“, warte auf den Piep und stell deine Frage – oder sag z.B. "
-                + "„Spiel auf YouTube Bohemian Rhapsody“, „Öffne WhatsApp“, „nächstes Lied“, „Musik leiser“, "
+                + "„Spiel auf YouTube Bohemian Rhapsody“, „Öffne Instagram und schreib Emily hey“, „nächstes Lied“, „Musik leiser“, "
                 + "„Taschenlampe an“ oder „Handy auf lautlos“. Neue Versionen kommen automatisch, "
                 + "ohne dass du etwas installieren musst.", 13, false, 20);
 
@@ -249,10 +261,31 @@ public class Screen implements Component {
                 && !Prefs.apiKey(a).isEmpty()) {
             launchService();
         }
+        askOnce();
         // Beim Oeffnen der App kurz nach neuem Code schauen (hoechstens alle 5 Minuten)
         long last = Prefs.get(a).getLong(Prefs.LAST_UPDATE_CHECK, 0);
         if (Prefs.autoUpdate(a) && System.currentTimeMillis() - last > 5 * 60_000L) {
             checkForUpdate(false);
+        }
+    }
+
+    /** Fragt wichtige Erlaubnisse einmalig von selbst ab. */
+    private void askOnce() {
+        SharedPreferences sp = Prefs.get(a);
+        if (!Messenger.canReadContacts(a) && !sp.getBoolean("asked_contacts", false)) {
+            sp.edit().putBoolean("asked_contacts", true).apply();
+            a.requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_PERMS + 1);
+            return;
+        }
+        if (!Settings.canDrawOverlays(a) && !sp.getBoolean("asked_overlay", false)) {
+            sp.edit().putBoolean("asked_overlay", true).apply();
+            new AlertDialog.Builder(a)
+                    .setTitle("Apps direkt öffnen")
+                    .setMessage("Damit ich YouTube, Instagram, WhatsApp und andere Apps auf Zuruf direkt öffnen kann, "
+                            + "braucht Android die Erlaubnis „Über anderen Apps einblenden“. Jetzt einschalten?")
+                    .setPositiveButton("Erlauben", (d, w) -> openOverlaySettings())
+                    .setNegativeButton("Später", null)
+                    .show();
         }
     }
 
@@ -286,7 +319,31 @@ public class Screen implements Component {
                 + (Core.isDownloadedCode() ? " (nachgeladen)" : "")
                 + (us == null || us.isEmpty() ? "" : "\n" + us));
         allowUpdatesButton.setVisibility(a.getPackageManager().canRequestPackageInstalls() ? View.GONE : View.VISIBLE);
-        overlayButton.setVisibility(Settings.canDrawOverlays(a) ? View.GONE : View.VISIBLE);
+        boolean overlay = Settings.canDrawOverlays(a);
+        boolean contacts = Messenger.canReadContacts(a);
+        boolean a11yPossible = Shell.version() >= 2;
+        boolean a11y = a11yPossible && Shell.accessibilityEnabled(a);
+        boolean newShell = Updater.shellAvailable > Shell.version();
+        overlayButton.setVisibility(overlay ? View.GONE : View.VISIBLE);
+        contactsButton.setVisibility(contacts ? View.GONE : View.VISIBLE);
+        accessibilityButton.setVisibility(a11yPossible && !a11y ? View.VISIBLE : View.GONE);
+        appInfoButton.setVisibility(a11yPossible && !a11y ? View.VISIBLE : View.GONE);
+        shellButton.setVisibility(newShell ? View.VISIBLE : View.GONE);
+        StringBuilder warn = new StringBuilder();
+        if (!overlay) {
+            warn.append("⚠ Apps öffnen sich noch nicht direkt – unten „Apps & YouTube direkt öffnen erlauben“ tippen.\n");
+        }
+        if (!contacts) {
+            warn.append("⚠ Für Nachrichten an Namen: „Kontakte erlauben“.\n");
+        }
+        if (a11yPossible && !a11y) {
+            warn.append("⚠ Nachrichten werden nur vorbereitet – zum automatischen Absenden die Bedienungshilfe einschalten.\n");
+        }
+        if (newShell) {
+            warn.append("ℹ Neue App-Hülle verfügbar (automatisches Absenden) – unten bei „Updates“.\n");
+        }
+        warnView.setText(warn.toString().trim());
+        warnView.setVisibility(warn.length() == 0 ? View.GONE : View.VISIBLE);
     }
 
     private void savePrefs() {
@@ -323,6 +380,9 @@ public class Screen implements Component {
                 && a.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             needed.add(Manifest.permission.POST_NOTIFICATIONS);
         }
+        if (!Messenger.canReadContacts(a)) {
+            needed.add(Manifest.permission.READ_CONTACTS);
+        }
         if (locationBox.isChecked() && !LocationHelper.hasPermission(a)) {
             needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
             needed.add(Manifest.permission.ACCESS_COARSE_LOCATION);
@@ -349,7 +409,11 @@ public class Screen implements Component {
     }
 
     private void permissionsResult(int requestCode) {
+        render();
         if (requestCode != REQ_PERMS) {
+            if (requestCode == REQ_PERMS + 1) {
+                askOnce(); // danach ggf. die naechste Erlaubnis
+            }
             return;
         }
         if (a.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -443,6 +507,62 @@ public class Screen implements Component {
             }
             if (Engine.idle || !Engine.running) {
                 Updater.apply(app, u); // nie mitten in einem Gespraech
+            }
+            a.runOnUiThread(this::render);
+        });
+    }
+
+    private void openAccessibility() {
+        try {
+            a.startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            Toast.makeText(a, "„Hey Claude“ suchen und einschalten", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(a, "Einstellungen → Bedienungshilfen → Hey Claude", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void openAppInfo() {
+        try {
+            a.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + a.getPackageName())));
+            Toast.makeText(a, "Oben rechts ⋮ → „Eingeschränkte Einstellungen zulassen“", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(a, "Einstellungen → Apps → Hey Claude", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Neue Huelle: einmalige Installation, Play Protect muss dafuer kurz aus sein. */
+    private void confirmShellInstall() {
+        new AlertDialog.Builder(a)
+                .setTitle("Neue App-Hülle installieren")
+                .setMessage("Damit ich Nachrichten selbst absenden kann, brauche ich die Bedienungshilfe. "
+                        + "Google Play Protect blockiert solche Apps außerhalb des Play Store. So geht es:\n\n"
+                        + "1. Play Store → Profilbild → Play Protect → Zahnrad → „Apps mit Play Protect scannen“ aus\n"
+                        + "2. Hier „Installieren“ tippen und bestätigen\n"
+                        + "3. Play Protect wieder einschalten\n"
+                        + "4. In der App „Bedienungshilfe einschalten“ tippen")
+                .setPositiveButton("Installieren", (d, w) -> installShell())
+                .setNeutralButton("Play Store öffnen", (d, w) -> {
+                    Intent i = a.getPackageManager().getLaunchIntentForPackage("com.android.vending");
+                    if (i != null) {
+                        a.startActivity(i);
+                    }
+                })
+                .setNegativeButton("Abbrechen", null)
+                .show();
+    }
+
+    private void installShell() {
+        if (!a.getPackageManager().canRequestPackageInstalls()) {
+            openUnknownSources();
+            return;
+        }
+        updateInfoView.setText("Lade neue App-Hülle …");
+        final android.content.Context app = a.getApplicationContext();
+        bg.execute(() -> {
+            Updater.Update u = Updater.check(app, true, true);
+            if (u != null && u.shell) {
+                Updater.apply(app, u);
             }
             a.runOnUiThread(this::render);
         });

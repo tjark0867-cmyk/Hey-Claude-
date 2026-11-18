@@ -22,7 +22,7 @@ import java.io.OutputStream;
 public final class Core {
 
     /** Version der Huelle. Nur erhoehen, wenn sich Manifest, Berechtigungen oder Klassen in diesem Paket aendern. */
-    public static final int SHELL = 1;
+    public static final int SHELL = 2;
 
     private static final String TAG = "HeyClaude";
     private static final String CORE_PKG = "de.heyclaude.core.";
@@ -40,6 +40,8 @@ public final class Core {
     private static Context appCtx;
     private static VoiceService service;
     private static Activity visibleActivity;
+    private static volatile android.accessibilityservice.AccessibilityService accessibility;
+    private static volatile android.service.notification.NotificationListenerService notificationListener;
 
     private Core() {
     }
@@ -233,6 +235,24 @@ public final class Core {
 
     static void setService(VoiceService s) {
         service = s;
+    }
+
+    /** Ab Huelle 2: die eingeschaltete Bedienungshilfe (oder null). */
+    public static android.accessibilityservice.AccessibilityService accessibilityService() {
+        return accessibility;
+    }
+
+    /** Ab Huelle 2: der erlaubte Benachrichtigungs-Zugriff (oder null). */
+    public static android.service.notification.NotificationListenerService notificationListener() {
+        return notificationListener;
+    }
+
+    static void setAccessibility(android.accessibilityservice.AccessibilityService s) {
+        accessibility = s;
+    }
+
+    static void setNotificationListener(android.service.notification.NotificationListenerService s) {
+        notificationListener = s;
     }
 
     static void setVisibleActivity(Activity a) {

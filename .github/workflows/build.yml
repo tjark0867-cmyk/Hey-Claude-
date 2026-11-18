@@ -64,8 +64,10 @@ jobs:
           zip -q -X "$GITHUB_WORKSPACE/out/core.jar" classes*.dex
           cd ..
           SHELL_VERSION=$(grep -oP 'int SHELL = \K[0-9]+' app/src/main/java/de/heyclaude/app/Core.java)
+          MIN_SHELL=$(grep -oP 'int MIN_SHELL = \K[0-9]+' app/src/main/java/de/heyclaude/core/BuildInfo.java)
           SHA=$(sha256sum "$GITHUB_WORKSPACE/out/core.jar" | cut -d' ' -f1)
-          printf '{"build": %s, "shell": %s, "sha256": "%s"}\n' "$GITHUB_RUN_NUMBER" "$SHELL_VERSION" "$SHA" > "$GITHUB_WORKSPACE/out/update.json"
+          # "shell" = Huelle, die der Programmcode mindestens braucht; "apk_shell" = Huelle in der APK
+          printf '{"build": %s, "shell": %s, "apk_shell": %s, "sha256": "%s"}\n' "$GITHUB_RUN_NUMBER" "$MIN_SHELL" "$SHELL_VERSION" "$SHA" > "$GITHUB_WORKSPACE/out/update.json"
           cat "$GITHUB_WORKSPACE/out/update.json"
           ls -la "$GITHUB_WORKSPACE/out"
 

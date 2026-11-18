@@ -39,6 +39,8 @@ final class Updater {
     static final String ACTION_INSTALL_STATUS = "de.heyclaude.app.INSTALL_STATUS";
 
     static volatile String lastStatus = "";
+    /** Neueste verfuegbare Huellen-Version (0 = keine neuere bekannt). */
+    static volatile int shellAvailable;
 
     private Updater() {
     }
@@ -80,6 +82,11 @@ final class Updater {
      * ausser der Nutzer sucht selbst. Ergebnis steht in lastStatus.
      */
     static Update check(Context ctx, boolean userInitiated) {
+        return check(ctx, userInitiated, false);
+    }
+
+    /** allowShell: auch eine neue App-Huelle (APK) laden – nur wenn der Nutzer das ausdruecklich will. */
+    static Update check(Context ctx, boolean userInitiated, boolean allowShell) {
         try {
             Prefs.get(ctx).edit().putLong(Prefs.LAST_UPDATE_CHECK, System.currentTimeMillis()).apply();
             cleanup(ctx);
@@ -117,34 +124,36 @@ final class Updater {
             }
             JSONObject meta = new JSONObject(get(metaUrl));
             int build = meta.optInt("build", -1);
-            int shell = meta.optInt("shell", 1);
+            int minShell = meta.optInt("shell", 1);           // Programmcode braucht mindestens diese Huelle
+            int apkShell = meta.optInt("apk_shell", minShell); // Huelle in der APK dieses Releases
             String sha = meta.optString("sha256", "");
+            int installedShell = Core.shellVersion();
 
-            if (shell > Core.shellVersion()) {
-                // Selten: Huelle hat sich geaendert (neue Berechtigungen o.ae.) -> APK noetig
-                if (apkUrl == null) {
-                    lastStatus = "Neue App-Version ohne APK";
-                    return null;
+            // 1) Neue Huelle (selten, z.B. fuer Bedienungshilfe): nur auf Knopfdruck installieren
+            if (apkShell > installedShell) {
+                shellAvailable = apkShell;
+                if (allowShell && apkUrl != null) {
+                    lastStatus = "Lade neue App-Hülle " + apkShell + " …";
+                    File apk = new File(ctx.getCacheDir(), "update-" + build + ".apk");
+                    if (!(apk.exists() && apk.length() == apkSize)) {
+                        downloadTo(apkUrl, apk);
+                    }
+                    if (apkSize > 0 && apk.length() != apkSize) {
+                        apk.delete();
+                        lastStatus = "Download unvollständig – später nochmal";
+                        return null;
+                    }
+                    return new Update(true, build, apk);
                 }
-                if (!userInitiated && isMetered(ctx)) {
-                    lastStatus = "Große App-Aktualisierung wartet auf WLAN";
-                    return null;
-                }
-                lastStatus = "Lade App-Aktualisierung …";
-                File apk = new File(ctx.getCacheDir(), "update-" + build + ".apk");
-                if (!(apk.exists() && apk.length() == apkSize)) {
-                    downloadTo(apkUrl, apk);
-                }
-                if (apkSize > 0 && apk.length() != apkSize) {
-                    apk.delete();
-                    lastStatus = "Download unvollständig – später nochmal";
-                    return null;
-                }
-                return new Update(true, build, apk);
+            }
+            if (minShell > installedShell) {
+                lastStatus = "Neue Version braucht die neue App-Hülle – „Neue App-Hülle installieren“ tippen";
+                return null;
             }
 
             if (build <= running) {
-                lastStatus = "Aktuell (Build " + running + ")";
+                lastStatus = "Aktuell (Build " + running + ")"
+                        + (shellAvailable > installedShell ? " · neue App-Hülle " + shellAvailable + " verfügbar" : "");
                 return null;
             }
             if (Core.isBad(ctx, build)) {

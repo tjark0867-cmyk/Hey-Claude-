@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hey Claude</string>
+    <string name="accessibility_description">Damit Hey Claude auf deinen Sprachbefehl hin in anderen Apps tippen kann – zum Beispiel eine Nachricht in WhatsApp oder Instagram abschicken. Hey Claude wird nur aktiv, wenn du es per Sprache darum bittest.</string>
     <color name="ic_launcher_bg">#C96442</color>
 </resources>

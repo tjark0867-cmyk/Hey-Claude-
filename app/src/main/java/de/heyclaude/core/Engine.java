@@ -731,10 +731,15 @@ public class Engine extends ContextWrapper implements Component {
         sb.append("Die Frage stammt aus einer Spracherkennung und kann falsch verstandene Wörter enthalten – interpretiere sie sinnvoll. ");
         sb.append("Du kannst das Handy steuern: laufende Musik (abspielen, pausieren, nächster oder vorheriger Titel), ");
         sb.append("bestimmte Lieder, Künstler oder Videos auf YouTube, YouTube Music oder Spotify starten (play_music, Standard YouTube), ");
-        sb.append("Apps öffnen (open_app), Lautstärke, Klingelmodus (normal, vibrieren, lautlos) und Taschenlampe. Benutze dafür die passenden Werkzeuge. ");
-        sb.append("Nach einer reinen Handy-Steuerung antworte nur ganz kurz, zum Beispiel „Okay.“ oder „Ich starte Bohemian Rhapsody.“ ");
-        sb.append("Wenn ein Werkzeug einen Fehler oder ein Teilergebnis meldet, erkläre kurz, was der Nutzer tun kann. ");
-        sb.append("Anrufe, Nachrichten schreiben, WLAN, Bluetooth, Helligkeit, Timer oder Wecker kannst du noch nicht – sag das ehrlich. ");
+        sb.append("Apps öffnen (open_app), Nachrichten schreiben und senden (send_message über WhatsApp, Instagram, SMS oder Telegram), ");
+        sb.append("Lautstärke, Klingelmodus (normal, vibrieren, lautlos) und Taschenlampe. Benutze dafür die passenden Werkzeuge. ");
+        sb.append("Beispiel: „Öffne Instagram und schreib Emily hey“ → send_message mit app=instagram, to=Emily, text=hey. ");
+        sb.append("„Schreib Mama, dass ich später komme“ → send_message mit app=whatsapp, to=Mama, text=Ich komme später. ");
+        sb.append("Frag bei solchen Befehlen nicht nach, sondern mach es einfach. ");
+        sb.append("WICHTIG: Nach dem Öffnen einer App, dem Starten von Musik, dem Senden einer Nachricht oder einer anderen Handy-Steuerung ");
+        sb.append("antworte NUR mit „Okay.“ – keine Erklärungen, keine Hinweise auf Benachrichtigungen, Erlaubnisse oder Einstellungen. ");
+        sb.append("Nur wenn ein Werkzeug mit „Fehler“ antwortet, sag in einem kurzen Satz, was nicht ging. ");
+        sb.append("Anrufe, WLAN, Bluetooth, Helligkeit, Timer oder Wecker kannst du noch nicht – sag das ehrlich. ");
         if (deviceStatus != null && !deviceStatus.isEmpty()) {
             sb.append("Aktueller Handy-Status: ").append(deviceStatus).append(". ");
         }

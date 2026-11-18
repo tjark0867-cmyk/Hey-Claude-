@@ -42,4 +42,6 @@ Nur wenn sich die Hülle ändert (neue Berechtigungen, selten), kommt eine APK. 
 - Mit „Stopp“ oder „Abbrechen“ nach dem Piep brichst du ab.
 - Komplett lautlos stellen geht erst, wenn du in der App „Lautlos-Modus erlauben“ antippst. Ohne diese Erlaubnis stellt Claude das Handy nur auf Vibration.
 - **Musik & Apps starten:** „Spiel auf YouTube …“, „Spiel auf Spotify …“, „Öffne WhatsApp“. Das klappt direkt, wenn in der App „Apps & YouTube starten erlauben“ an ist, sonst kommt eine Benachrichtigung zum Antippen. Das Handy muss dafür entsperrt sein. Ohne YouTube Premium stoppt YouTube, wenn der Bildschirm ausgeht.
+- **Nachrichten:** „Öffne Instagram und schreib Emily hey“, „Schreib Mama auf WhatsApp, dass ich später komme“, „SMS an Paul: bin gleich da“. Ohne Bedienungshilfe öffnet sich der Chat mit eingetragenem Text, und du tippst nur noch auf Senden. Mit Bedienungshilfe (App-Hülle 2) sendet Claude selbst.
+- **Bedienungshilfe einrichten (einmalig):** Play Protect kurz aus → in der App „Neue App-Hülle installieren“ → Play Protect wieder an → „Bedienungshilfe einschalten“. Ist sie ausgegraut: App-Info → ⋮ → „Eingeschränkte Einstellungen zulassen“.
 - Anrufe, Timer und Wecker kann Claude noch nicht.

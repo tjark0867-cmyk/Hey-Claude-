@@ -125,6 +125,16 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                 new JSONObject().put("name", new JSONObject().put("type", "string")
                         .put("description", "Name der App, wie er auf dem Handy heißt")),
                 new JSONArray().put("name")));
+        tools.put(tool("send_message",
+                "Schreibt und sendet eine Nachricht an eine Person. app: whatsapp (Standard), instagram, sms oder telegram. "
+                        + "to: Name des Kontakts so wie der Nutzer ihn sagt (z.B. \"Emily\") oder ein Benutzername. "
+                        + "text: die Nachricht genau so, wie der Nutzer sie haben will.",
+                new JSONObject()
+                        .put("app", new JSONObject().put("type", "string")
+                                .put("enum", new JSONArray().put("whatsapp").put("instagram").put("sms").put("telegram")))
+                        .put("to", new JSONObject().put("type", "string"))
+                        .put("text", new JSONObject().put("type", "string")),
+                new JSONArray().put("to").put("text")));
         tools.put(tool("flashlight",
                 "Schaltet die Taschenlampe des Handys ein (on=true) oder aus (on=false).",
                 new JSONObject().put("on", new JSONObject().put("type", "boolean")),
@@ -163,6 +173,9 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                     return playMusic(input.optString("app", "youtube"), input.optString("query", ""));
                 case "open_app":
                     return openApp(input.optString("name", ""));
+                case "send_message":
+                    return Messenger.send(ctx, main, input.optString("app", "whatsapp"),
+                            input.optString("to", ""), input.optString("text", ""));
                 default:
                     return "Fehler: unbekanntes Werkzeug " + name;
             }
@@ -303,12 +316,8 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
         }
         String[] label = new String[1];
         Intent i = Launcher.musicIntent(ctx, app, query, label);
-        boolean direct = Launcher.launch(ctx, main, i, label[0]);
-        if (!direct) {
-            return "Teilweise: Ich habe eine Benachrichtigung zum Antippen geschickt. Damit Musik direkt startet, "
-                    + "in der App „Apps & YouTube starten erlauben“ antippen.";
-        }
-        return "OK: " + label[0] + " wird gestartet (das Handy muss entsperrt sein)";
+        Launcher.launch(ctx, main, i, label[0]);
+        return "OK";
     }
 
     private String openApp(String name) {
@@ -320,12 +329,8 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
         if (i == null) {
             return "Fehler: " + found[1] + " lässt sich nicht öffnen.";
         }
-        boolean direct = Launcher.launch(ctx, main, i, found[1]);
-        if (!direct) {
-            return "Teilweise: Benachrichtigung zum Öffnen von " + found[1] + " geschickt. Für direktes Öffnen "
-                    + "in der App „Apps & YouTube starten erlauben“ antippen.";
-        }
-        return "OK: " + found[1] + " wird geöffnet";
+        Launcher.launch(ctx, main, i, found[1]);
+        return "OK";
     }
 
     /** Kurzer Handy-Status fuer Claude (Akku, Lautstaerke, ...). */

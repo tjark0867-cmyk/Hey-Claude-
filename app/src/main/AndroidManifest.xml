@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- WICHTIG: Keine SMS-Lese-, Benachrichtigungs-Zugriffs- oder Bedienungshilfe-Berechtigungen!
-         Sonst blockiert Google Play Protect die Installation. -->
+    <!-- Hinweis: Bedienungshilfe und Benachrichtigungs-Zugriff (unten) fuehren dazu, dass Google Play Protect
+         die Installation aus WhatsApp/Browser blockiert. Fuer die (seltene) Installation einer neuen Huelle
+         Play Protect kurz ausschalten. Normale Updates kommen ohne Installation. -->
 
     <!-- Die Huelle deklariert alle Berechtigungen und Bausteine, die der nachladbare Code
          heute oder spaeter braucht. Nur wenn sich hier etwas aendert, ist eine neue APK noetig. -->
@@ -91,6 +92,31 @@
             android:name=".VoiceService"
             android:exported="false"
             android:foregroundServiceType="microphone|location" />
+
+        <!-- Bedienungshilfe: in anderen Apps tippen (z.B. Nachricht absenden) – nur wenn eingeschaltet -->
+        <service
+            android:name=".CoreAccessibilityService"
+            android:exported="true"
+            android:label="Hey Claude"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config" />
+        </service>
+
+        <!-- Benachrichtigungen lesen/beantworten – nur wenn erlaubt -->
+        <service
+            android:name=".CoreNotificationListener"
+            android:exported="true"
+            android:label="Hey Claude"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Rueckmeldung der App-Installation -->
         <receiver
