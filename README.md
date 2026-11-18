@@ -25,9 +25,15 @@ Am PC kannst du stattdessen einfach den ganzen Ordnerinhalt hochladen. Der Workf
 4. **Akku-Optimierung ausschalten** antippen. Das ist vor allem bei Samsung, Xiaomi und Huawei wichtig.
 5. Die App schließen und „Hey Claude“ sagen.
 
+## Updates
+Ab Version 1.3 aktualisiert sich die App selbst. Etwa alle 6 Stunden schaut sie im WLAN auf GitHub nach einer neuen Version und installiert sie im Hintergrund, aber nie mitten in einem Gespräch.
+- Einmalig nötig: In der App **„Updates erlauben“** antippen und „Aus dieser Quelle zulassen“ einschalten.
+- Nach einem Update erscheint der Hinweis „Hey Claude wurde aktualisiert“. Ein Tipp darauf genügt, dann höre ich wieder zu. Android erlaubt nicht, dass das Mikrofon nach einem Update von selbst wieder angeht.
+- Mit **„Jetzt nach Update suchen“** kannst du auch sofort prüfen, das geht auch mit mobilen Daten.
+
 ## Gut zu wissen
 - Solange der Assistent läuft, siehst du eine Benachrichtigung (mit den Knöpfen „Fragen“ und „Beenden“) und den grünen Mikrofon-Punkt. Das schreibt Android vor.
-- Nach einem **Neustart des Handys** musst du die App einmal öffnen und „Starten“ tippen. Ab Android 14 darf ein Mikrofon-Dienst nicht von selbst starten.
+- Nach einem **Neustart des Handys** erscheint ein Hinweis. Tippst du darauf, startet der Assistent wieder. Ab Android 14 darf ein Mikrofon-Dienst nicht ganz von selbst starten.
 - Das Wake-Word-Modell ist englisch. Am zuverlässigsten klappt es, wenn du „Hey Claude“ englisch aussprichst (etwa „Hey Klod“).
 - Mit „Stopp“ oder „Abbrechen“ nach dem Piep brichst du ab.
 - Claude kann am Handy selbst nichts steuern, also keine Timer, Anrufe oder Musik. Die App beantwortet nur Fragen.

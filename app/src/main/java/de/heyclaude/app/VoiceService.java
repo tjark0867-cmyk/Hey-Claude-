@@ -119,6 +119,7 @@ public class VoiceService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent != null ? intent.getAction() : null;
         if (ACTION_STOP.equals(action)) {
+            Prefs.setEnabled(this, false);
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -148,8 +149,11 @@ public class VoiceService extends Service {
                 stopSelf();
                 return START_NOT_STICKY;
             }
+            Prefs.setEnabled(this, true);
+            Hints.cancel(this, Hints.ID_RESTART);
             setStatus("Lade Wake-Word …");
             loadModel();
+            main.postDelayed(updateCheck, 90_000L);
             if (Prefs.location(this)) {
                 worker.execute(() -> locationHelper.get(5000)); // Standort schon mal vorab holen
             }
@@ -190,6 +194,41 @@ public class VoiceService extends Service {
         lastStatus = "Gestoppt";
         notifyUi();
         super.onDestroy();
+    }
+
+    // ------------------------------------------------------------------ Automatische Updates
+
+    private final Runnable updateCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (destroyed) {
+                return;
+            }
+            main.postDelayed(this, 6 * 3600_000L);
+            if (!Prefs.autoUpdate(VoiceService.this)) {
+                return;
+            }
+            final android.content.Context app = getApplicationContext();
+            new Thread(() -> {
+                final java.io.File apk = Updater.download(app, false);
+                if (apk != null) {
+                    main.post(() -> installWhenIdle(apk, 0));
+                }
+            }, "update-check").start();
+        }
+    };
+
+    /** Installiert erst, wenn gerade kein Gespraech laeuft. */
+    private void installWhenIdle(final java.io.File apk, final int tries) {
+        if (destroyed) {
+            return;
+        }
+        if (state == State.WAKE || state == State.IDLE) {
+            final android.content.Context app = getApplicationContext();
+            new Thread(() -> Updater.install(app, apk), "update-install").start();
+        } else if (tries < 30) {
+            main.postDelayed(() -> installWhenIdle(apk, tries + 1), 60_000L);
+        }
     }
 
     // ------------------------------------------------------------------ Wake-Word (Vosk)

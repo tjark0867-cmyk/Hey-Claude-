@@ -196,9 +196,42 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:paddingTop="24dp"
+            android:text="Updates"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/updateInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="4dp"
+            android:text="" />
+
+        <CheckBox
+            android:id="@+id/autoUpdate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Automatisch aktualisieren (im WLAN)" />
+
+        <Button
+            android:id="@+id/allowUpdates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Updates erlauben (einmalig nötig)" />
+
+        <Button
+            android:id="@+id/checkUpdate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Jetzt nach Update suchen" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:paddingTop="20dp"
             android:textSize="13sp"
-            android:text="So geht es:API-Schlüssel eintragen → „Starten“ → App kann geschlossen werden. Sag „Hey Claude“, warte auf den Piep und stell deine Frage. Solange der Assistent läuft, siehst du eine Benachrichtigung und den grünen Mikrofon-Punkt. Nach einem Neustart des Handys die App einmal öffnen und auf „Starten“ tippen." />
+            android:text="So geht es:API-Schlüssel eintragen → „Starten“ → App kann geschlossen werden. Sag „Hey Claude“, warte auf den Piep und stell deine Frage. Solange der Assistent läuft, siehst du eine Benachrichtigung und den grünen Mikrofon-Punkt. Nach einem Update oder Neustart des Handys einfach auf den Hinweis tippen – dann höre ich wieder zu." />
 
     </LinearLayout>
 </ScrollView>

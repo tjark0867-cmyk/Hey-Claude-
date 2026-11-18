@@ -18,6 +18,9 @@ final class Prefs {
     static final String ELEVEN_VOICE_NAME = "eleven_voice_name";
     static final String ELEVEN_FAST = "eleven_fast";
     static final String LOCATION = "location";
+    static final String ENABLED = "enabled";
+    static final String AUTO_UPDATE = "auto_update";
+    static final String LAST_UPDATE_CHECK = "last_update_check";
 
     private Prefs() {
     }
@@ -61,5 +64,18 @@ final class Prefs {
 
     static boolean location(Context ctx) {
         return get(ctx).getBoolean(LOCATION, true);
+    }
+
+    /** Hat der Nutzer den Assistenten eingeschaltet (und nicht selbst beendet)? */
+    static boolean enabled(Context ctx) {
+        return get(ctx).getBoolean(ENABLED, false);
+    }
+
+    static void setEnabled(Context ctx, boolean on) {
+        get(ctx).edit().putBoolean(ENABLED, on).apply();
+    }
+
+    static boolean autoUpdate(Context ctx) {
+        return get(ctx).getBoolean(AUTO_UPDATE, true);
     }
 }

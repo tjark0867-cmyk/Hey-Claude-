@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -28,6 +29,8 @@ public class MainActivity extends Activity {
 
     private static final int REQ_PERMS = 7;
 
+    static volatile boolean visible;
+
     private TextView statusView;
     private TextView lastQView;
     private TextView lastAView;
@@ -41,6 +44,9 @@ public class MainActivity extends Activity {
     private TextView voiceNameView;
     private TextView voiceInfoView;
     private CheckBox elevenFastBox;
+    private CheckBox autoUpdateBox;
+    private TextView updateInfoView;
+    private Button allowUpdatesButton;
     private boolean askAfterStart;
     private Speaker testSpeaker;
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
@@ -64,6 +70,13 @@ public class MainActivity extends Activity {
         voiceNameView = findViewById(R.id.voiceName);
         voiceInfoView = findViewById(R.id.voiceInfo);
         elevenFastBox = findViewById(R.id.elevenFast);
+        autoUpdateBox = findViewById(R.id.autoUpdate);
+        updateInfoView = findViewById(R.id.updateInfo);
+        allowUpdatesButton = findViewById(R.id.allowUpdates);
+        autoUpdateBox.setChecked(Prefs.autoUpdate(this));
+        allowUpdatesButton.setOnClickListener(v -> openUnknownSources());
+        Button checkUpdate = findViewById(R.id.checkUpdate);
+        checkUpdate.setOnClickListener(v -> checkForUpdate());
 
         apiKeyEdit.setText(Prefs.apiKey(this));
         modelEdit.setText(Prefs.model(this));
@@ -85,7 +98,9 @@ public class MainActivity extends Activity {
 
         toggleButton.setOnClickListener(v -> {
             if (VoiceService.running) {
+                Prefs.setEnabled(this, false);
                 stopService(new Intent(this, VoiceService.class));
+                mainHandler.postDelayed(this::render, 300);
             } else {
                 askAfterStart = false;
                 startAssistant();
@@ -122,12 +137,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        visible = true;
         VoiceService.statusListener = () -> runOnUiThread(this::render);
         render();
+        // War der Assistent an (z.B. nach Update oder Handy-Neustart)? Dann automatisch weitermachen.
+        if (Prefs.enabled(this) && !VoiceService.running
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                && !Prefs.apiKey(this).isEmpty()) {
+            launchService();
+        }
     }
 
     @Override
     protected void onPause() {
+        visible = false;
         VoiceService.statusListener = null;
         savePrefs();
         super.onPause();
@@ -142,6 +165,38 @@ public class MainActivity extends Activity {
         lastAView.setText(a == null || a.isEmpty() ? "–" : a);
         String info = Speaker.lastInfo;
         voiceInfoView.setText(info == null || info.isEmpty() ? "" : "Zuletzt: " + info);
+        String us = Updater.lastStatus;
+        updateInfoView.setText("Version " + Updater.currentVersion(this)
+                + (us == null || us.isEmpty() ? "" : " · " + us));
+        allowUpdatesButton.setVisibility(getPackageManager().canRequestPackageInstalls() ? View.GONE : View.VISIBLE);
+    }
+
+    private void openUnknownSources() {
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName())));
+            Toast.makeText(this, "„Aus dieser Quelle zulassen“ einschalten", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Bitte in den Einstellungen „Unbekannte Apps installieren“ für Hey Claude erlauben", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void checkForUpdate() {
+        savePrefs();
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            openUnknownSources();
+            return;
+        }
+        updateInfoView.setText("Suche nach Update …");
+        final android.content.Context app = getApplicationContext();
+        bg.execute(() -> {
+            final java.io.File apk = Updater.download(app, true);
+            runOnUiThread(this::render);
+            if (apk != null) {
+                Updater.install(app, apk);
+                runOnUiThread(this::render);
+            }
+        });
     }
 
     @Override
@@ -222,6 +277,7 @@ public class MainActivity extends Activity {
         e.putBoolean(Prefs.LOCATION, locationBox.isChecked());
         e.putString(Prefs.ELEVEN_KEY, elevenKeyEdit.getText().toString().trim());
         e.putBoolean(Prefs.ELEVEN_FAST, elevenFastBox.isChecked());
+        e.putBoolean(Prefs.AUTO_UPDATE, autoUpdateBox.isChecked());
         e.apply();
     }
 
