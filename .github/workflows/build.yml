@@ -42,6 +42,12 @@ jobs:
           mv vosk-model-small-en-us-0.15 app/src/main/assets/model-en
           rm model.zip
 
+      - name: Build-Nummer in den Programmcode eintragen
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          sed -i -E "s/BUILD = [0-9]+;/BUILD = ${GITHUB_RUN_NUMBER};/" app/src/main/java/de/heyclaude/core/BuildInfo.java
+          grep "BUILD =" app/src/main/java/de/heyclaude/core/BuildInfo.java
+
       - name: APK bauen
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -50,15 +56,31 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/out/HeyClaude.apk"
 
+      - name: Nachladbaren Programmcode packen (Updates ohne Installation)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          rm -rf _dex && mkdir _dex && cd _dex
+          unzip -q "$GITHUB_WORKSPACE/out/HeyClaude.apk" 'classes*.dex'
+          zip -q -X "$GITHUB_WORKSPACE/out/core.jar" classes*.dex
+          cd ..
+          SHELL_VERSION=$(grep -oP 'int SHELL = \K[0-9]+' app/src/main/java/de/heyclaude/app/Core.java)
+          SHA=$(sha256sum "$GITHUB_WORKSPACE/out/core.jar" | cut -d' ' -f1)
+          printf '{"build": %s, "shell": %s, "sha256": "%s"}\n' "$GITHUB_RUN_NUMBER" "$SHELL_VERSION" "$SHA" > "$GITHUB_WORKSPACE/out/update.json"
+          cat "$GITHUB_WORKSPACE/out/update.json"
+          ls -la "$GITHUB_WORKSPACE/out"
+
       - uses: actions/upload-artifact@v4
         with:
           name: HeyClaude-APK
-          path: out/HeyClaude.apk
+          path: out/
 
       - name: Als Release veroeffentlichen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Hey Claude (Build ${{ github.run_number }})
-          files: out/HeyClaude.apk
-          body: Neueste APK - herunterladen und installieren.
+          files: |
+            out/HeyClaude.apk
+            out/core.jar
+            out/update.json
+          body: Neue Version. Installierte Apps holen sich den Programmcode (core.jar) automatisch - ohne Installation.

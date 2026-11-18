@@ -26,11 +26,14 @@ Am PC kannst du stattdessen einfach den ganzen Ordnerinhalt hochladen. Der Workf
 4. **Akku-Optimierung ausschalten** antippen. Das ist vor allem bei Samsung, Xiaomi und Huawei wichtig.
 5. Die App schließen und „Hey Claude“ sagen.
 
-## Updates
-Ab Version 1.3 aktualisiert sich die App selbst. Etwa alle 6 Stunden schaut sie im WLAN auf GitHub nach einer neuen Version und installiert sie im Hintergrund, aber nie mitten in einem Gespräch.
-- Einmalig nötig: In der App **„Updates erlauben“** antippen und „Aus dieser Quelle zulassen“ einschalten.
-- Nach einem Update erscheint der Hinweis „Hey Claude wurde aktualisiert“. Ein Tipp darauf genügt, dann höre ich wieder zu. Android erlaubt nicht, dass das Mikrofon nach einem Update von selbst wieder angeht.
-- Mit **„Jetzt nach Update suchen“** kannst du auch sofort prüfen, das geht auch mit mobilen Daten.
+## Updates – ohne Installation
+Die App besteht aus zwei Teilen:
+- **Hülle** (die installierte APK): Berechtigungen, Mikrofon-Dienst, Wake-Word-Modell. Sie ändert sich fast nie.
+- **Programmcode** (`core.jar` im Release, ca. 300 KB): die ganze Logik und die Oberfläche.
+
+Neue Versionen sind normalerweise nur neuer Programmcode. Die App holt ihn alle 30 Minuten und beim Öffnen und tauscht ihn **im laufenden Betrieb** aus, also ohne Installation, ohne Neustart und ohne Antippen. Startet eine neue Version nicht sauber, schaltet die App automatisch auf die vorige zurück.
+
+Nur wenn sich die Hülle ändert (neue Berechtigungen, selten), kommt eine APK. Das läuft wie bisher automatisch im WLAN, danach genügt ein Tipp auf den Hinweis.
 
 ## Gut zu wissen
 - Solange der Assistent läuft, siehst du eine Benachrichtigung (mit den Knöpfen „Fragen“ und „Beenden“) und den grünen Mikrofon-Punkt. Das schreibt Android vor.
@@ -38,4 +41,5 @@ Ab Version 1.3 aktualisiert sich die App selbst. Etwa alle 6 Stunden schaut sie 
 - Das Wake-Word-Modell ist englisch. Am zuverlässigsten klappt es, wenn du „Hey Claude“ englisch aussprichst (etwa „Hey Klod“).
 - Mit „Stopp“ oder „Abbrechen“ nach dem Piep brichst du ab.
 - Komplett lautlos stellen geht erst, wenn du in der App „Lautlos-Modus erlauben“ antippst. Ohne diese Erlaubnis stellt Claude das Handy nur auf Vibration.
-- Apps öffnen, Anrufe, Timer und Wecker kann Claude noch nicht.
+- **Musik & Apps starten:** „Spiel auf YouTube …“, „Spiel auf Spotify …“, „Öffne WhatsApp“. Das klappt direkt, wenn in der App „Apps & YouTube starten erlauben“ an ist, sonst kommt eine Benachrichtigung zum Antippen. Das Handy muss dafür entsperrt sein. Ohne YouTube Premium stoppt YouTube, wenn der Bildschirm ausgeht.
+- Anrufe, Timer und Wecker kann Claude noch nicht.

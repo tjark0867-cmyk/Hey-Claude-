@@ -1,7 +1,8 @@
-package de.heyclaude.app;
+package de.heyclaude.core;
 
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.media.AudioManager;
@@ -23,6 +24,7 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
     private static final String TAG = "HeyClaude";
 
     private final Context ctx;
+    private final Handler main;
     private final AudioManager audio;
     private CameraManager cameras;
     private String torchCameraId;
@@ -31,6 +33,7 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
 
     DeviceControl(Context ctx, Handler main) {
         this.ctx = ctx.getApplicationContext();
+        this.main = main;
         this.audio = this.ctx.getSystemService(AudioManager.class);
         try {
             cameras = this.ctx.getSystemService(CameraManager.class);
@@ -108,6 +111,20 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                 new JSONObject().put("mode", new JSONObject().put("type", "string")
                         .put("enum", new JSONArray().put("normal").put("vibrate").put("silent"))),
                 new JSONArray().put("mode")));
+        tools.put(tool("play_music",
+                "Startet ein Lied, Album, Künstler, Video oder eine Playlist in einer Musik-App auf dem Handy. "
+                        + "app: youtube (Standard, wenn der Nutzer nichts anderes sagt), youtube_music oder spotify. "
+                        + "query: wonach gesucht werden soll, möglichst genau (z.B. \"Queen Bohemian Rhapsody\").",
+                new JSONObject()
+                        .put("query", new JSONObject().put("type", "string"))
+                        .put("app", new JSONObject().put("type", "string")
+                                .put("enum", new JSONArray().put("youtube").put("youtube_music").put("spotify"))),
+                new JSONArray().put("query")));
+        tools.put(tool("open_app",
+                "Öffnet eine installierte App auf dem Handy, z.B. WhatsApp, Kamera, Google Maps, Instagram.",
+                new JSONObject().put("name", new JSONObject().put("type", "string")
+                        .put("description", "Name der App, wie er auf dem Handy heißt")),
+                new JSONArray().put("name")));
         tools.put(tool("flashlight",
                 "Schaltet die Taschenlampe des Handys ein (on=true) oder aus (on=false).",
                 new JSONObject().put("on", new JSONObject().put("type", "boolean")),
@@ -142,6 +159,10 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
                     return ringer(input.optString("mode", "normal"));
                 case "flashlight":
                     return flashlight(input.optBoolean("on", true));
+                case "play_music":
+                    return playMusic(input.optString("app", "youtube"), input.optString("query", ""));
+                case "open_app":
+                    return openApp(input.optString("name", ""));
                 default:
                     return "Fehler: unbekanntes Werkzeug " + name;
             }
@@ -274,6 +295,37 @@ final class DeviceControl implements ClaudeClient.ToolHandler {
         cameras.setTorchMode(torchCameraId, on);
         torchOn = on;
         return on ? "OK: Taschenlampe an" : "OK: Taschenlampe aus";
+    }
+
+    private String playMusic(String app, String query) {
+        if (query.trim().isEmpty()) {
+            return "Fehler: Es fehlt, was gespielt werden soll.";
+        }
+        String[] label = new String[1];
+        Intent i = Launcher.musicIntent(ctx, app, query, label);
+        boolean direct = Launcher.launch(ctx, main, i, label[0]);
+        if (!direct) {
+            return "Teilweise: Ich habe eine Benachrichtigung zum Antippen geschickt. Damit Musik direkt startet, "
+                    + "in der App „Apps & YouTube starten erlauben“ antippen.";
+        }
+        return "OK: " + label[0] + " wird gestartet (das Handy muss entsperrt sein)";
+    }
+
+    private String openApp(String name) {
+        String[] found = Launcher.findApp(ctx, name);
+        if (found == null) {
+            return "Fehler: Keine App namens „" + name + "“ gefunden.";
+        }
+        Intent i = ctx.getPackageManager().getLaunchIntentForPackage(found[0]);
+        if (i == null) {
+            return "Fehler: " + found[1] + " lässt sich nicht öffnen.";
+        }
+        boolean direct = Launcher.launch(ctx, main, i, found[1]);
+        if (!direct) {
+            return "Teilweise: Benachrichtigung zum Öffnen von " + found[1] + " geschickt. Für direktes Öffnen "
+                    + "in der App „Apps & YouTube starten erlauben“ antippen.";
+        }
+        return "OK: " + found[1] + " wird geöffnet";
     }
 
     /** Kurzer Handy-Status fuer Claude (Akku, Lautstaerke, ...). */

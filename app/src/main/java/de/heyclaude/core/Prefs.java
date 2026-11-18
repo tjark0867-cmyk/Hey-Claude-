@@ -1,4 +1,4 @@
-package de.heyclaude.app;
+package de.heyclaude.core;
 
 import android.content.Context;
 import android.content.SharedPreferences;

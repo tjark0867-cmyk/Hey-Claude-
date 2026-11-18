@@ -1,4 +1,4 @@
-package de.heyclaude.app;
+package de.heyclaude.core;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -7,12 +7,15 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 
+import de.heyclaude.app.MainActivity;
+
 /** Einfache Hinweis-Benachrichtigungen (Update, Neustart). */
 final class Hints {
 
     private static final String CHANNEL = "heyclaude_hints";
     static final int ID_RESTART = 50;
     static final int ID_UPDATE = 51;
+    static final int ID_LAUNCH = 52;
 
     private Hints() {
     }
@@ -24,7 +27,7 @@ final class Hints {
                     NotificationManager.IMPORTANCE_DEFAULT);
             nm.createNotificationChannel(ch);
             Notification n = new Notification.Builder(ctx, CHANNEL)
-                    .setSmallIcon(R.drawable.ic_mic)
+                    .setSmallIcon(Res.drawable(ctx, "ic_mic"))
                     .setContentTitle(title)
                     .setContentText(text)
                     .setStyle(new Notification.BigTextStyle().bigText(text))

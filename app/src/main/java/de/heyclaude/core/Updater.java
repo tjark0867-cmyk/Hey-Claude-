@@ -1,4 +1,4 @@
-package de.heyclaude.app;
+package de.heyclaude.core;
 
 import android.app.PendingIntent;
 import android.content.Context;
@@ -23,9 +23,13 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
+import de.heyclaude.app.Core;
+import de.heyclaude.app.InstallStatusReceiver;
+
 /**
- * Holt neue Versionen automatisch von GitHub (Releases) und installiert sie.
- * Ab Android 12 klappt das im Hintergrund ohne Rueckfrage, weil die App sich selbst aktualisiert.
+ * Holt neue Versionen automatisch von GitHub (Releases).
+ * Normalerweise ist das nur neuer Programmcode, der ohne Installation sofort aktiv wird.
+ * Nur wenn sich die Huelle aendert (selten), wird eine APK installiert.
  */
 final class Updater {
 
@@ -57,66 +61,167 @@ final class Updater {
         }
     }
 
+    /** Ein gefundenes Update: entweder neuer Programmcode (ohne Installation) oder eine neue Huelle (APK). */
+    static final class Update {
+        final boolean shell;
+        final int build;
+        final File file;
+
+        Update(boolean shell, int build, File file) {
+            this.shell = shell;
+            this.build = build;
+            this.file = file;
+        }
+    }
+
     /**
      * Sucht nach einer neuen Version und laedt sie herunter (blockiert, nicht im Haupt-Thread).
-     * Liefert die APK-Datei oder null, wenn nichts zu tun ist. Ergebnis steht in lastStatus.
+     * Neuer Programmcode ist klein und kommt immer; eine neue Huelle (APK, selten) nur im WLAN,
+     * ausser der Nutzer sucht selbst. Ergebnis steht in lastStatus.
      */
-    static File download(Context ctx, boolean userInitiated) {
+    static Update check(Context ctx, boolean userInitiated) {
         try {
-            if (!userInitiated && isMetered(ctx)) {
-                lastStatus = "Update-Suche wartet auf WLAN";
-                return null;
-            }
             Prefs.get(ctx).edit().putLong(Prefs.LAST_UPDATE_CHECK, System.currentTimeMillis()).apply();
-            File[] old = ctx.getCacheDir().listFiles();
-            if (old != null) {
-                for (File f : old) {
-                    if (f.getName().startsWith("update-") && f.lastModified() < System.currentTimeMillis() - 3600_000L) {
-                        f.delete();
-                    }
-                }
-            }
+            cleanup(ctx);
             JSONObject rel = new JSONObject(get(LATEST));
-            String tag = rel.optString("tag_name", "");
-            long remote = parseBuild(tag);
-            long local = currentVersion(ctx);
-            if (remote <= local) {
-                lastStatus = "Aktuell (Version " + local + ")";
-                return null;
-            }
-            String url = null;
-            long size = -1;
             JSONArray assets = rel.optJSONArray("assets");
+            String apkUrl = null;
+            long apkSize = -1;
+            String coreUrl = null;
+            long coreSize = -1;
+            String metaUrl = null;
             if (assets != null) {
                 for (int i = 0; i < assets.length(); i++) {
                     JSONObject a = assets.optJSONObject(i);
-                    if (a != null && a.optString("name", "").endsWith(".apk")) {
-                        url = a.optString("browser_download_url", null);
-                        size = a.optLong("size", -1);
-                        break;
+                    if (a == null) {
+                        continue;
+                    }
+                    String name = a.optString("name", "");
+                    String url = a.optString("browser_download_url", null);
+                    long size = a.optLong("size", -1);
+                    if (name.endsWith(".apk")) {
+                        apkUrl = url;
+                        apkSize = size;
+                    } else if (name.equals("core.jar")) {
+                        coreUrl = url;
+                        coreSize = size;
+                    } else if (name.equals("update.json")) {
+                        metaUrl = url;
                     }
                 }
             }
-            if (url == null) {
-                lastStatus = "Neue Version " + remote + " hat keine APK";
+            int running = BuildInfo.BUILD;
+            if (metaUrl == null) {
+                lastStatus = "Aktuell (Build " + running + ")";
                 return null;
             }
-            lastStatus = "Lade Version " + remote + " …";
-            File out = new File(ctx.getCacheDir(), "update-" + remote + ".apk");
-            if (!(out.exists() && out.length() == size)) {
-                downloadTo(url, out);
+            JSONObject meta = new JSONObject(get(metaUrl));
+            int build = meta.optInt("build", -1);
+            int shell = meta.optInt("shell", 1);
+            String sha = meta.optString("sha256", "");
+
+            if (shell > Core.shellVersion()) {
+                // Selten: Huelle hat sich geaendert (neue Berechtigungen o.ae.) -> APK noetig
+                if (apkUrl == null) {
+                    lastStatus = "Neue App-Version ohne APK";
+                    return null;
+                }
+                if (!userInitiated && isMetered(ctx)) {
+                    lastStatus = "Große App-Aktualisierung wartet auf WLAN";
+                    return null;
+                }
+                lastStatus = "Lade App-Aktualisierung …";
+                File apk = new File(ctx.getCacheDir(), "update-" + build + ".apk");
+                if (!(apk.exists() && apk.length() == apkSize)) {
+                    downloadTo(apkUrl, apk);
+                }
+                if (apkSize > 0 && apk.length() != apkSize) {
+                    apk.delete();
+                    lastStatus = "Download unvollständig – später nochmal";
+                    return null;
+                }
+                return new Update(true, build, apk);
             }
-            if (size > 0 && out.length() != size) {
-                out.delete();
-                lastStatus = "Download unvollständig – versuche es später nochmal";
+
+            if (build <= running) {
+                lastStatus = "Aktuell (Build " + running + ")";
                 return null;
             }
-            lastStatus = "Version " + remote + " bereit";
-            return out;
+            if (Core.isBad(ctx, build)) {
+                lastStatus = "Build " + build + " übersprungen (lief nicht stabil)";
+                return null;
+            }
+            if (coreUrl == null) {
+                lastStatus = "Neue Version ohne Code-Datei";
+                return null;
+            }
+            lastStatus = "Lade neue Version " + build + " …";
+            File code = new File(ctx.getCacheDir(), "core-dl-" + build + ".jar");
+            downloadTo(coreUrl, code);
+            if ((coreSize > 0 && code.length() != coreSize)
+                    || (!sha.isEmpty() && !sha.equalsIgnoreCase(sha256(code)))) {
+                code.delete();
+                lastStatus = "Download fehlerhaft – später nochmal";
+                return null;
+            }
+            return new Update(false, build, code);
         } catch (Exception e) {
             Log.w(TAG, "Update-Suche", e);
             lastStatus = "Update-Suche fehlgeschlagen (" + e.getClass().getSimpleName() + ")";
             return null;
+        }
+    }
+
+    /** Wendet ein Update an. Programmcode wird sofort aktiv, ohne Installation und ohne Neustart. */
+    static void apply(Context ctx, Update u) {
+        if (u.shell) {
+            install(ctx, u.file);
+            return;
+        }
+        try {
+            Core.installCode(ctx, u.file, u.build);
+            lastStatus = "Neue Version " + u.build + " aktiv";
+            Core.hotSwap(ctx);
+        } catch (Exception e) {
+            Log.e(TAG, "Code-Update", e);
+            lastStatus = "Update fehlgeschlagen: " + e.getMessage();
+        }
+    }
+
+    private static String sha256(File f) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            InputStream in = new FileInputStream(f);
+            try {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    md.update(buf, 0, n);
+                }
+            } finally {
+                in.close();
+            }
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static void cleanup(Context ctx) {
+        File[] old = ctx.getCacheDir().listFiles();
+        if (old == null) {
+            return;
+        }
+        for (File f : old) {
+            String n = f.getName();
+            if ((n.startsWith("update-") || n.startsWith("core-dl-"))
+                    && f.lastModified() < System.currentTimeMillis() - 3600_000L) {
+                f.delete();
+            }
         }
     }
 
