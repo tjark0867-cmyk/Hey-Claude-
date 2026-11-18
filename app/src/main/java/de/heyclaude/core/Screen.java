@@ -232,7 +232,7 @@ public class Screen implements Component {
         contactsButton = button("Kontakte erlauben (für Nachrichten an Namen)", v ->
                 a.requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_PERMS + 1));
         accessibilityButton = button("Nachrichten automatisch absenden: Bedienungshilfe einschalten", v -> openAccessibility());
-        appInfoButton = button("Bedienungshilfe ausgegraut? App-Info öffnen → ⋮ → „Eingeschränkte Einstellungen zulassen“", v -> openAppInfo());
+        appInfoButton = button("Schalter gesperrt? App-Info → ⋮ → „Eingeschränkte Einstellungen zulassen“", v -> openAppInfo());
         button("Lautlos-Modus erlauben (für „Mach das Handy lautlos“)", v -> {
             try {
                 a.startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
@@ -358,11 +358,12 @@ public class Screen implements Component {
         overlayButton.setVisibility(overlay ? View.GONE : View.VISIBLE);
         contactsButton.setVisibility(contacts ? View.GONE : View.VISIBLE);
         accessibilityButton.setVisibility(a11yPossible && !a11y ? View.VISIBLE : View.GONE);
-        appInfoButton.setVisibility(a11yPossible && !a11y ? View.VISIBLE : View.GONE);
+        appInfoButton.setVisibility(!overlay || (a11yPossible && !a11y) ? View.VISIBLE : View.GONE);
         shellButton.setVisibility(newShell ? View.VISIBLE : View.GONE);
         StringBuilder warn = new StringBuilder();
         if (!overlay && !(a11yPossible && a11y)) {
-            warn.append("⚠ Apps öffnen sich nur, wenn Hey Claude offen ist – unten „Apps & YouTube direkt öffnen erlauben“ tippen und „Über anderen Apps einblenden“ einschalten.\n");
+            warn.append("⚠ Apps öffnen sich nur, wenn Hey Claude offen ist. Lösung: 1) unten „App-Info“ → ⋮ → „Eingeschränkte Einstellungen zulassen“, "
+                    + "2) „Über anderen Apps einblenden“ einschalten, 3) Bedienungshilfe einschalten.\n");
         }
         if (overlay) {
             Hints.cancel(a, Hints.ID_OVERLAY);
