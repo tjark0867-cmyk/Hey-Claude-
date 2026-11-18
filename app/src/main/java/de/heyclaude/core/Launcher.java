@@ -46,8 +46,23 @@ final class Launcher {
     private Launcher() {
     }
 
+    /** Darf die App aus dem Hintergrund Apps oeffnen? (Overlay-Erlaubnis oder eingeschaltete Bedienungshilfe) */
     static boolean canLaunchFromBackground(Context ctx) {
-        return Settings.canDrawOverlays(ctx);
+        return Settings.canDrawOverlays(ctx) || Shell.accessibility() != null;
+    }
+
+    /** Xiaomi/Redmi/POCO brauchen zusaetzlich "Pop-up-Fenster im Hintergrund anzeigen". */
+    static boolean isXiaomi() {
+        String m = (Build.MANUFACTURER + " " + Build.BRAND).toLowerCase(Locale.ROOT);
+        return m.contains("xiaomi") || m.contains("redmi") || m.contains("poco");
+    }
+
+    static Intent xiaomiPermissionEditor(Context ctx) {
+        Intent i = new Intent("miui.intent.action.APP_PERM_EDITOR");
+        i.setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity");
+        i.putExtra("extra_pkgname", ctx.getPackageName());
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return i;
     }
 
     static boolean isInstalled(Context ctx, String pkg) {
@@ -63,10 +78,11 @@ final class Launcher {
     static boolean launch(final Context ctx, final Handler main, final Intent intent, final String label) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         final boolean direct = canLaunchFromBackground(ctx);
+        final android.accessibilityservice.AccessibilityService a11y = Shell.accessibility();
         main.post(() -> {
             View overlay = null;
             WindowManager wm = null;
-            if (direct) {
+            if (Settings.canDrawOverlays(ctx)) {
                 try {
                     Context wctx = ctx;
                     if (Build.VERSION.SDK_INT >= 30) {
@@ -75,6 +91,7 @@ final class Launcher {
                     }
                     wm = wctx.getSystemService(WindowManager.class);
                     overlay = new View(wctx);
+                    overlay.setBackgroundColor(0x01000000); // fast unsichtbar, zaehlt aber als sichtbares Fenster
                     WindowManager.LayoutParams lp = new WindowManager.LayoutParams(1, 1,
                             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -90,14 +107,21 @@ final class Launcher {
             final WindowManager fwm = wm;
             main.postDelayed(() -> {
                 try {
-                    ctx.startActivity(intent);
+                    // Bedienungshilfe (falls an) darf immer starten, sonst ueber die Overlay-Erlaubnis
+                    if (a11y != null) {
+                        a11y.startActivity(intent);
+                    } else {
+                        ctx.startActivity(intent);
+                    }
                 } catch (Exception e) {
                     Log.w(TAG, "Start " + label, e);
                 }
                 if (!direct) {
                     PendingIntent pi = PendingIntent.getActivity(ctx, 20, intent,
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-                    Hints.show(ctx, Hints.ID_LAUNCH, label, "Tippe hier zum Öffnen.", pi);
+                    Hints.showWithAction(ctx, Hints.ID_LAUNCH, label, "Tippe hier zum Öffnen. "
+                                    + "Damit das künftig von selbst geht: „Immer direkt öffnen“.", pi,
+                            "Immer direkt öffnen", Hints.overlaySettings(ctx));
                 }
                 if (ov != null && fwm != null) {
                     main.postDelayed(() -> {
@@ -108,7 +132,7 @@ final class Launcher {
                         }
                     }, 3000);
                 }
-            }, ov != null ? 250 : 0);
+            }, ov != null ? 400 : 0);
         });
         return direct;
     }

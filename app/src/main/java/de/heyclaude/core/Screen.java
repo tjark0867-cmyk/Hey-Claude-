@@ -63,6 +63,7 @@ public class Screen implements Component {
     private Button accessibilityButton;
     private Button appInfoButton;
     private Button shellButton;
+    private Button xiaomiButton;
     private TextView warnView;
     private LinearLayout box;
     private boolean askAfterStart;
@@ -218,6 +219,15 @@ public class Screen implements Component {
 
         header("Erlaubnisse");
         overlayButton = button("Apps & YouTube direkt öffnen erlauben („Über anderen Apps einblenden“)", v -> openOverlaySettings());
+        xiaomiButton = button("Xiaomi: „Pop-up-Fenster im Hintergrund anzeigen“ erlauben", v -> {
+            try {
+                a.startActivity(Launcher.xiaomiPermissionEditor(a));
+                Toast.makeText(a, "„Pop-up-Fenster im Hintergrund anzeigen“ einschalten", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                openAppInfo();
+            }
+        });
+        xiaomiButton.setVisibility(Launcher.isXiaomi() ? View.VISIBLE : View.GONE);
         contactsButton = button("Kontakte erlauben (für Nachrichten an Namen)", v ->
                 a.requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_PERMS + 1));
         accessibilityButton = button("Nachrichten automatisch absenden: Bedienungshilfe einschalten", v -> openAccessibility());
@@ -330,8 +340,11 @@ public class Screen implements Component {
         appInfoButton.setVisibility(a11yPossible && !a11y ? View.VISIBLE : View.GONE);
         shellButton.setVisibility(newShell ? View.VISIBLE : View.GONE);
         StringBuilder warn = new StringBuilder();
-        if (!overlay) {
-            warn.append("⚠ Apps öffnen sich noch nicht direkt – unten „Apps & YouTube direkt öffnen erlauben“ tippen.\n");
+        if (!overlay && !(a11yPossible && a11y)) {
+            warn.append("⚠ Apps öffnen sich nur, wenn Hey Claude offen ist – unten „Apps & YouTube direkt öffnen erlauben“ tippen und „Über anderen Apps einblenden“ einschalten.\n");
+        }
+        if (overlay) {
+            Hints.cancel(a, Hints.ID_OVERLAY);
         }
         if (!contacts) {
             warn.append("⚠ Für Nachrichten an Namen: „Kontakte erlauben“.\n");

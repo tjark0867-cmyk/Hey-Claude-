@@ -159,6 +159,9 @@ public class Engine extends ContextWrapper implements Component {
             // Neuer Code im laufenden Betrieb: Dienst ist schon im Vordergrund
             foregroundStarted = true;
             setStatus("Neue Version geladen …");
+            if (!Launcher.canLaunchFromBackground(this)) {
+                Hints.showOverlayHint(this);
+            }
             loadModel();
             main.postDelayed(updateCheck, 30 * 60_000L);
             return Service.START_STICKY;
@@ -191,6 +194,11 @@ public class Engine extends ContextWrapper implements Component {
             }
             Prefs.setEnabled(this, true);
             Hints.cancel(this, Hints.ID_RESTART);
+            if (!Launcher.canLaunchFromBackground(this)) {
+                Hints.showOverlayHint(this); // sonst gehen Apps nur auf, wenn Hey Claude offen ist
+            } else {
+                Hints.cancel(this, Hints.ID_OVERLAY);
+            }
             setStatus("Lade Wake-Word …");
             loadModel();
             main.postDelayed(updateCheck, 60_000L);
