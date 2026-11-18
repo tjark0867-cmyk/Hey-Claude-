@@ -74,67 +74,258 @@ final class Launcher {
         }
     }
 
-    /** Startet die Activity. Liefert true, wenn sie direkt starten konnte (sonst kommt ein Hinweis). */
-    static boolean launch(final Context ctx, final Handler main, final Intent intent, final String label) {
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        final boolean direct = canLaunchFromBackground(ctx);
-        final android.accessibilityservice.AccessibilityService a11y = Shell.accessibility();
-        main.post(() -> {
-            View overlay = null;
-            WindowManager wm = null;
-            if (Settings.canDrawOverlays(ctx)) {
-                try {
-                    Context wctx = ctx;
-                    if (Build.VERSION.SDK_INT >= 30) {
-                        Display d = ctx.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
-                        wctx = ctx.createWindowContext(d, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
-                    }
-                    wm = wctx.getSystemService(WindowManager.class);
-                    overlay = new View(wctx);
-                    overlay.setBackgroundColor(0x01000000); // fast unsichtbar, zaehlt aber als sichtbares Fenster
-                    WindowManager.LayoutParams lp = new WindowManager.LayoutParams(1, 1,
-                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                                    | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                            PixelFormat.TRANSLUCENT);
-                    wm.addView(overlay, lp);
-                } catch (Exception e) {
-                    Log.w(TAG, "Overlay", e);
-                    overlay = null;
-                }
+    // ------------------------------------------------------------------ Starten (mit mehreren Wegen)
+
+    private static final String[] WAY_NAMES = {"Bedienungshilfe", "direkt (Overlay-Erlaubnis)",
+            "sichtbares Overlay-Fenster", "System-Startfreigabe"};
+    private static final java.util.LinkedList<String> DIAG = new java.util.LinkedList<>();
+    private static volatile int claimedToken;
+    private static int tokenCounter = (int) (System.currentTimeMillis() & 0xFFFF) * 16;
+
+    /** Fuer die Diagnose in der App. */
+    static synchronized void log(String line) {
+        String t = new java.text.SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new java.util.Date());
+        DIAG.addFirst(t + " " + line);
+        while (DIAG.size() > 15) {
+            DIAG.removeLast();
+        }
+        Log.i(TAG, "Start: " + line);
+    }
+
+    static synchronized String diagnostics(Context ctx) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Android ").append(Build.VERSION.SDK_INT).append(" · ").append(Build.MANUFACTURER).append(' ')
+                .append(Build.MODEL).append(" · Hülle ").append(Shell.version()).append(" · Code ").append(BuildInfo.BUILD)
+                .append("\nOverlay-Erlaubnis: ").append(Settings.canDrawOverlays(ctx) ? "an" : "AUS")
+                .append(" · Bedienungshilfe: ").append(Shell.accessibility() != null ? "an" : "aus")
+                .append(" · Bevorzugter Weg: ").append(wayName(Prefs.get(ctx).getInt("launch_way", -1)));
+        for (String l : DIAG) {
+            sb.append("\n").append(l);
+        }
+        return sb.toString();
+    }
+
+    private static String wayName(int w) {
+        return w >= 0 && w < WAY_NAMES.length ? WAY_NAMES[w] : "noch keiner";
+    }
+
+    /** Vom Trampolin aufgerufen: nur der erste Start eines Auftrags oeffnet das Ziel. */
+    static synchronized boolean claim(int token) {
+        if (token == 0 || token == claimedToken) {
+            return false;
+        }
+        claimedToken = token;
+        return true;
+    }
+
+    /**
+     * Oeffnet eine App – auch wenn Hey Claude nur im Hintergrund laeuft. Probiert nacheinander mehrere
+     * Wege und prueft jeweils, ob der unsichtbare Zwischenschritt wirklich gestartet ist. Der Weg, der
+     * klappt, wird gemerkt. Klappt keiner, kommt eine Benachrichtigung zum Antippen.
+     * target == null: nur testen.
+     */
+    static boolean launch(final Context ctx, final Handler main, final Intent target, final String label) {
+        if (target != null) {
+            target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        main.post(() -> new Attempt(ctx.getApplicationContext(), main, target, label).start());
+        return canLaunchFromBackground(ctx);
+    }
+
+    private static final class Attempt {
+        final Context ctx;
+        final Handler main;
+        final Intent target;
+        final String label;
+        final int token;
+        final int preferred;
+        int way = -1;
+        boolean triedPreferred;
+        View overlay;
+        WindowManager overlayWm;
+
+        Attempt(Context ctx, Handler main, Intent target, String label) {
+            this.ctx = ctx;
+            this.main = main;
+            this.target = target;
+            this.label = label == null ? "App" : label;
+            synchronized (Launcher.class) {
+                tokenCounter++;
+                this.token = tokenCounter;
             }
-            final View ov = overlay;
-            final WindowManager fwm = wm;
-            main.postDelayed(() -> {
-                try {
-                    // Bedienungshilfe (falls an) darf immer starten, sonst ueber die Overlay-Erlaubnis
-                    if (a11y != null) {
-                        a11y.startActivity(intent);
-                    } else {
-                        ctx.startActivity(intent);
+            this.preferred = Prefs.get(ctx).getInt("launch_way", -1);
+        }
+
+        Intent trampoline() {
+            Intent t = new Intent(ctx, de.heyclaude.app.CoreActivity.class);
+            t.putExtra("screen", "Trampoline");
+            t.putExtra("token", token);
+            if (target != null) {
+                t.putExtra("target", target);
+            }
+            t.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION
+                    | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+            return t;
+        }
+
+        void start() {
+            // Zuerst den Weg, der zuletzt geklappt hat
+            if (preferred >= 0 && preferred < WAY_NAMES.length) {
+                triedPreferred = true;
+                tryWay(preferred);
+            } else {
+                next();
+            }
+        }
+
+        void next() {
+            way++;
+            if (triedPreferred && way == preferred) {
+                way++;
+            }
+            if (way >= WAY_NAMES.length) {
+                fail();
+                return;
+            }
+            tryWay(way);
+        }
+
+        void tryWay(int w) {
+            boolean started;
+            try {
+                started = startWith(w);
+            } catch (Exception e) {
+                log(label + ": Weg „" + WAY_NAMES[w] + "“ Fehler: " + e.getClass().getSimpleName() + " " + e.getMessage());
+                started = false;
+            }
+            if (!started) {
+                main.post(this::next);
+                return;
+            }
+            final int tried = w;
+            main.postDelayed(() -> check(tried), w == 2 ? 1500 : 1100);
+        }
+
+        /** Startet das Trampolin auf Weg w. false = Weg hier nicht moeglich. */
+        boolean startWith(int w) throws Exception {
+            switch (w) {
+                case 0: {
+                    android.accessibilityservice.AccessibilityService a11y = Shell.accessibility();
+                    if (a11y == null) {
+                        return false;
                     }
+                    a11y.startActivity(trampoline());
+                    return true;
+                }
+                case 1:
+                    if (!Settings.canDrawOverlays(ctx)) {
+                        return false;
+                    }
+                    ctx.startActivity(trampoline());
+                    return true;
+                case 2:
+                    if (!Settings.canDrawOverlays(ctx)) {
+                        return false;
+                    }
+                    showOverlayThenStart();
+                    return true;
+                case 3: {
+                    Intent t = trampoline();
+                    android.os.Bundle creatorOpts = null;
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        creatorOpts = android.app.ActivityOptions.makeBasic()
+                                .setPendingIntentCreatorBackgroundActivityStartMode(
+                                        android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                                .toBundle();
+                    }
+                    PendingIntent pi = PendingIntent.getActivity(ctx, 40 + (token & 0xF), t,
+                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT, creatorOpts);
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        android.app.ActivityOptions o = android.app.ActivityOptions.makeBasic()
+                                .setPendingIntentBackgroundActivityStartMode(
+                                        android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                        pi.send(ctx, 0, null, null, null, null, o.toBundle());
+                    } else {
+                        pi.send();
+                    }
+                    return true;
+                }
+                default:
+                    return false;
+            }
+        }
+
+        void showOverlayThenStart() throws Exception {
+            Context wctx = ctx;
+            if (Build.VERSION.SDK_INT >= 30) {
+                Display d = ctx.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+                wctx = ctx.createWindowContext(d, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+            }
+            overlayWm = wctx.getSystemService(WindowManager.class);
+            overlay = new View(wctx);
+            overlay.setBackgroundColor(0x08000000); // kaum sichtbar, zaehlt aber als sichtbares Fenster
+            int px = Math.max(2, Math.round(4 * ctx.getResources().getDisplayMetrics().density));
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(px, px,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT);
+            overlayWm.addView(overlay, lp);
+            final View ov = overlay;
+            ov.post(() -> ov.postDelayed(() -> {
+                try {
+                    ov.getContext().startActivity(trampoline());
                 } catch (Exception e) {
-                    Log.w(TAG, "Start " + label, e);
+                    log(label + ": Overlay-Start Fehler " + e.getMessage());
                 }
-                if (!direct) {
-                    PendingIntent pi = PendingIntent.getActivity(ctx, 20, intent,
-                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-                    Hints.showWithAction(ctx, Hints.ID_LAUNCH, label, "Tippe hier zum Öffnen. "
-                                    + "Damit das künftig von selbst geht: „Immer direkt öffnen“.", pi,
-                            "Immer direkt öffnen", Hints.overlaySettings(ctx));
+            }, 300));
+        }
+
+        void removeOverlay() {
+            if (overlay != null && overlayWm != null) {
+                final View ov = overlay;
+                final WindowManager wm = overlayWm;
+                overlay = null;
+                main.postDelayed(() -> {
+                    try {
+                        wm.removeView(ov);
+                    } catch (Exception ignored) {
+                        // egal
+                    }
+                }, 1500);
+            }
+        }
+
+        void check(int w) {
+            if (claimedToken == token) {
+                removeOverlay();
+                log(label + ": geöffnet über „" + WAY_NAMES[w] + "“");
+                Prefs.get(ctx).edit().putInt("launch_way", w).apply();
+                if (target == null) {
+                    Hints.show(ctx, Hints.ID_LAUNCH, "Test erfolgreich ✅",
+                            "Hey Claude kann Apps im Hintergrund öffnen (Weg: " + WAY_NAMES[w] + ").", null);
                 }
-                if (ov != null && fwm != null) {
-                    main.postDelayed(() -> {
-                        try {
-                            fwm.removeView(ov);
-                        } catch (Exception ignored) {
-                            // egal
-                        }
-                    }, 3000);
-                }
-            }, ov != null ? 400 : 0);
-        });
-        return direct;
+                return;
+            }
+            removeOverlay();
+            log(label + ": Weg „" + WAY_NAMES[w] + "“ blockiert");
+            next();
+        }
+
+        void fail() {
+            log(label + ": alle Wege blockiert → Benachrichtigung");
+            Prefs.get(ctx).edit().remove("launch_way").apply();
+            if (target == null) {
+                Hints.showWithAction(ctx, Hints.ID_LAUNCH, "Test: blockiert ❌",
+                        "Android lässt Hey Claude im Hintergrund noch keine Apps öffnen. "
+                                + "Bitte die Bedienungshilfe einschalten (neue App-Hülle) und die Diagnose schicken.",
+                        null, "Overlay-Erlaubnis", Hints.overlaySettings(ctx));
+                return;
+            }
+            PendingIntent pi = PendingIntent.getActivity(ctx, 20, target,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            Hints.showWithAction(ctx, Hints.ID_LAUNCH, label, "Tippe hier zum Öffnen.", pi,
+                    "Immer direkt öffnen", Hints.overlaySettings(ctx));
+        }
     }
 
     // ------------------------------------------------------------------ Musik

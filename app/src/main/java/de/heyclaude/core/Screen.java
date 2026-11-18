@@ -65,6 +65,7 @@ public class Screen implements Component {
     private Button shellButton;
     private Button xiaomiButton;
     private TextView warnView;
+    private TextView diagView;
     private LinearLayout box;
     private boolean askAfterStart;
     private Speaker testSpeaker;
@@ -242,6 +243,26 @@ public class Screen implements Component {
         });
         button("Akku-Optimierung ausschalten (empfohlen)", v -> requestBatteryExemption());
 
+        header("Hintergrund-Start");
+        text("Hier siehst du, ob Hey Claude Apps öffnen darf, während du in einer anderen App bist.", 13, false, 0);
+        button("Test: Startbildschirm, dann in 6 Sek. prüfen", v -> {
+            Toast.makeText(a, "Geh jetzt auf den Startbildschirm – in 6 Sekunden teste ich", Toast.LENGTH_LONG).show();
+            final android.content.Context app = a.getApplicationContext();
+            mainHandler.postDelayed(() -> Launcher.launch(app, mainHandler, null, "Test"), 6000);
+            mainHandler.postDelayed(this::render, 12000);
+        });
+        diagView = text("", 12, false, 4);
+        diagView.setTextIsSelectable(true);
+        button("Diagnose kopieren (zum Schicken an Claude)", v -> {
+            try {
+                android.content.ClipboardManager cm = a.getSystemService(android.content.ClipboardManager.class);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Hey Claude Diagnose", Launcher.diagnostics(a)));
+                Toast.makeText(a, "Kopiert – jetzt im Chat einfügen", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(a, "Kopieren ging nicht", Toast.LENGTH_SHORT).show();
+            }
+        });
+
         header("Updates");
         updateInfoView = text("", 14, false, 4);
         autoUpdateBox = check("Automatisch aktualisieren", Prefs.autoUpdate(a));
@@ -355,6 +376,7 @@ public class Screen implements Component {
         if (newShell) {
             warn.append("ℹ Neue App-Hülle verfügbar (automatisches Absenden) – unten bei „Updates“.\n");
         }
+        diagView.setText(Launcher.diagnostics(a));
         warnView.setText(warn.toString().trim());
         warnView.setVisibility(warn.length() == 0 ? View.GONE : View.VISIBLE);
     }
